@@ -97,9 +97,9 @@ CREATE TABLE public.orders (
 CREATE TABLE public.profiles (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL UNIQUE,
-  branch_id uuid NOT NULL,
+  branch_id uuid,
   full_name text,
-  role text NOT NULL DEFAULT 'STAFF'::text CHECK (role = ANY (ARRAY['OWNER'::text, 'MANAGER'::text, 'STAFF'::text])),
+  role USER-DEFINED NOT NULL DEFAULT 'USER'::app_role,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT profiles_pkey PRIMARY KEY (id),
   CONSTRAINT profiles_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),

@@ -5,9 +5,16 @@ import { UseFormReturn, useFieldArray } from 'react-hook-form';
 import { Plus, Trash2, Shirt } from 'lucide-react';
 import { CreateOrderInput } from '@/app/lib/schemas/order';
 
+// Define the shape of a Laundry Item from the DB
+interface LaundryItem {
+  id: string;
+  name: string;
+  category: string;
+}
+
 interface ItemsStepProps {
   form: UseFormReturn<CreateOrderInput>;
-  dbItems: any[];
+  dbItems: LaundryItem[]; // Replaced any[] with LaundryItem[]
   settings: any;
 }
 
@@ -25,7 +32,9 @@ export default function ItemsStep({ form, dbItems, settings }: ItemsStepProps) {
   const [service, setService] = useState<typeof SERVICE_TYPES[number]>('Wash & Iron');
 
   const watchedItems = watch('items');
-  const watchedTotal = watchedItems?.reduce((sum, i) => sum + i.total_price, 0) || 0;
+  
+  // FIXED: Explicit typing for the reduce function to solve "implicit any" error
+  const watchedTotal = watchedItems?.reduce((sum: number, item: any) => sum + (item.total_price || 0), 0) || 0;
 
   // Filter Logic
   const categories = useMemo(() => {
@@ -42,9 +51,12 @@ export default function ItemsStep({ form, dbItems, settings }: ItemsStepProps) {
     if (!selectedItem) return;
     const dbItem = dbItems.find(i => i.id === selectedItem);
     
+    if (!dbItem) return; // Safety check
+
     let price = 0;
     let totalPrice = 0;
 
+    // Pricing Logic
     if (service === 'Iron') {
         price = settings.iron_only_piece_rate || 8;
         totalPrice = price * qty;
@@ -59,6 +71,7 @@ export default function ItemsStep({ form, dbItems, settings }: ItemsStepProps) {
         totalPrice = price * qty;
     }
 
+    // Append to form array
     append({
       item_id: dbItem.id,
       item_name: dbItem.name,
