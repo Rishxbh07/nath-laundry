@@ -1,37 +1,76 @@
-'use client';
-
 import React from 'react';
 import Header from '../components/Header';
+import HeroSection from '../components/HeroSection';
+import { createClient } from '@/app/utils/supabase/server';
+import { redirect } from 'next/navigation';
 
-export default function Home() {
+export default async function Home() {
+  const supabase = await createClient();
+
+  // 1. Verify User Session
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    redirect('/login');
+  }
+
+  // 2. Fetch Profile & Branch Info
+  const { data: profile, error } = await supabase
+    .from('profiles')
+    .select(`
+      full_name,
+      role,
+      branches (
+        code,
+        name
+      )
+    `)
+    .eq('user_id', user.id)
+    .single();
+
+  if (error) {
+    console.error("Error fetching profile:", error);
+  }
+
+  // 3. Normalize Data
+  const fullName = profile?.full_name ?? 'Unknown Staff';
+  
+  // Safe access to the joined branch data (it comes as an array or object depending on relationship)
+  // @ts-ignore: Supabase types for joins can be tricky
+  const branchData = Array.isArray(profile?.branches) ? profile.branches[0] : profile?.branches;
+  
+  const branchName = branchData?.name ?? 'Unknown Branch';
+  const branchCode = branchData?.code ?? 'HQ';
+
+  // 4. Role Mapping Logic
+  let displayRole = 'STAFF'; // Default fallback
+  const rawRole = profile?.role;
+
+  if (rawRole === 'ADMIN') {
+    displayRole = 'OWNER';
+  } else if (rawRole === 'AUTH_USER') {
+    displayRole = 'STAFF';
+  } else if (rawRole) {
+    displayRole = rawRole; // Fallback to whatever is in DB if it doesn't match above
+  }
+
   return (
-    // Added pb-24 to ensure content isn't hidden behind the new bottom nav
-    <main className="min-h-screen flex flex-col pt-24 pb-24 px-6">
+    // Added pb-32 to clear the bottom nav
+    <main className="min-h-screen flex flex-col pt-24 pb-32 px-6 bg-slate-50">
       <Header />
 
-      <div className="flex flex-col gap-6 animate-in fade-in duration-500">
+      <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
         
-        {/* Welcome Section */}
-        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
-          <h2 className="text-xl font-bold text-slate-700 mb-1">Hello, Staff 👋</h2>
-          <p className="text-slate-400 text-sm">Ready to manage laundry?</p>
-        </div>
+        <HeroSection 
+          fullName={fullName}
+          branchCode={branchCode}
+          branchName={branchName}
+          role={displayRole} // Pass the mapped role here
+        />
 
-        {/* Quick Stats or Info could go here later */}
-        <div className="grid grid-cols-2 gap-4">
-          <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100 flex flex-col items-center justify-center h-32">
-            <span className="text-3xl font-bold text-blue-600">12</span>
-            <span className="text-xs text-blue-400 font-medium uppercase mt-1">Pending Orders</span>
-          </div>
-          <div className="bg-green-50 p-4 rounded-2xl border border-green-100 flex flex-col items-center justify-center h-32">
-            <span className="text-3xl font-bold text-green-600">5</span>
-            <span className="text-xs text-green-500 font-medium uppercase mt-1">Ready to Deliver</span>
-          </div>
-        </div>
-
-        <div className="mt-8 text-center">
-          <p className="text-slate-300 text-sm font-medium">
-            Tap the <span className="text-blue-500 font-bold">QR Button</span> below to start
+        {/* Placeholder for future content */}
+        <div className="flex flex-col items-center justify-center mt-12 text-center space-y-2 opacity-60">
+          <p className="text-slate-400 text-sm font-medium">
+            Scan a QR code to begin
           </p>
         </div>
 

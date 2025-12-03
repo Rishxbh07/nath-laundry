@@ -1,13 +1,21 @@
+// File: app/components/BottomNav.tsx
 'use client';
 
 import React from 'react';
 import { Home, QrCode, FilePlus } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter, usePathname } from 'next/navigation'; // 1. Add usePathname
 
 export default function BottomNav() {
+  const router = useRouter();
+  const pathname = usePathname(); // 2. Get current path
   
+  // 3. Logic: If we are in the order wizard, DO NOT show this nav
+  if (pathname?.startsWith('/orders/new')) {
+    return null;
+  }
+
   const openCamera = () => {
-    // This is where we will eventually plug in the QR scanning logic
     console.log("Attempting to open camera...");
     alert("Camera Scanner interface would open here.");
   };
@@ -21,7 +29,7 @@ export default function BottomNav() {
         <span className="text-[10px] font-medium uppercase tracking-wide">Home</span>
       </Link>
 
-      {/* Center Action: QR Scanner (The Soul) */}
+      {/* Center Action: QR Scanner */}
       <div className="relative -top-6">
         <button 
           onClick={openCamera}
@@ -33,7 +41,7 @@ export default function BottomNav() {
 
       {/* Right Action: Create New Bill */}
       <button 
-        onClick={() => console.log("Create Bill Clicked")}
+        onClick={() => router.push('/orders/new')}
         className="flex flex-col items-center justify-center gap-1 text-slate-400 hover:text-blue-600 transition-colors w-16"
       >
         <FilePlus size={28} strokeWidth={2} />
