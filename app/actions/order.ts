@@ -19,16 +19,18 @@ export async function fetchLaundryMeta() {
 
   if (!profile?.branch_id) throw new Error("No branch assigned");
 
-  // 2. Fetch Items and Settings in parallel
-  const [itemsRes, settingsRes] = await Promise.all([
+  // 2. Fetch Items, Settings, AND Special Rates in parallel
+  const [itemsRes, settingsRes, ratesRes] = await Promise.all([
     supabase.from('laundry_items').select('*').eq('is_active', true).order('display_order'),
-    supabase.from('laundry_settings').select('*').eq('branch_id', profile.branch_id).single()
+    supabase.from('laundry_settings').select('*').eq('branch_id', profile.branch_id).single(),
+    supabase.from('special_item_rates').select('*').eq('branch_id', profile.branch_id).eq('is_active', true)
   ]);
 
   return {
     branch_id: profile.branch_id,
     items: itemsRes.data || [],
     settings: settingsRes.data || null,
+    specialRates: ratesRes.data || [], // Pass this to the UI
   };
 }
 
@@ -59,19 +61,12 @@ export async function submitOrder(data: CreateOrderInput, branchId: string) {
     payment_method: data.payment_status === 'PAID' ? data.payment_method : null
   };
 
-  // Prepare Items: Format specifically for the SQL function
-  // We need to ensure 'item_id' is null for generated rows (like Bulk Base) 
-  // if they don't have a specific DB ID
   const formattedItems = data.items.map(item => ({
     ...item,
-    // If item_id is missing (undefined/empty string), send null to DB.
-    // The DB RPC function must handle NULL item_id in order_items insert.
     item_id: item.item_id || null, 
-    // Ensure the snapshot name is explicitly passed
     item_name_snapshot: item.item_name 
   }));
 
-  // Call the SQL function created earlier
   const { data: orderId, error } = await supabase.rpc('create_full_order', {
     p_branch_id: branchId,
     p_customer_phone: data.customer_phone,

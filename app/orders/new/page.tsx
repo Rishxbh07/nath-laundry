@@ -1,3 +1,4 @@
+// File: app/orders/new/page.tsx
 import React from 'react';
 import { fetchLaundryMeta } from '@/app/actions/order';
 import OrderWizard from '@/app/orders/OrderWizard';
@@ -12,7 +13,6 @@ export default async function NewOrderPage() {
     redirect('/login');
   }
 
-  // We removed the header from here so OrderWizard controls the full layout
   return (
     <main className="min-h-screen bg-slate-50 flex flex-col">
       <div className="flex-1 flex flex-col h-screen">
@@ -20,6 +20,7 @@ export default async function NewOrderPage() {
           branchId={meta.branch_id} 
           items={meta.items}
           settings={meta.settings}
+          specialRates={meta.specialRates} // Inject here
         />
       </div>
     </main>

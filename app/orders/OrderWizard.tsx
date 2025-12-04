@@ -18,6 +18,7 @@ interface OrderWizardProps {
   branchId: string;
   items: any[];
   settings: any;
+  specialRates?: any[]; // Allow it to be optional but generally expected
 }
 
 const STEPS = [
@@ -27,7 +28,7 @@ const STEPS = [
   { label: 'Billing', icon: IndianRupee },
 ];
 
-export default function OrderWizard({ branchId, items: dbItems, settings }: OrderWizardProps) {
+export default function OrderWizard({ branchId, items: dbItems, settings, specialRates = [] }: OrderWizardProps) {
   const [currentStep, setCurrentStep] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const router = useRouter();
@@ -149,7 +150,14 @@ export default function OrderWizard({ branchId, items: dbItems, settings }: Orde
       {/* 2. Dynamic Content Area */}
       <div className="flex-1 overflow-y-auto p-6 pb-32 scrollbar-hide">
         {currentStep === 0 && <CustomerStep form={form} />}
-        {currentStep === 1 && <ItemsStep form={form} dbItems={dbItems} settings={settings} />}
+        {currentStep === 1 && (
+           <ItemsStep 
+              form={form} 
+              dbItems={dbItems} 
+              settings={settings} 
+              specialRates={specialRates} // Pass it down
+           />
+        )}
         {currentStep === 2 && <DeliveryStep form={form} />}
         {currentStep === 3 && <ReviewStep form={form} />}
       </div>

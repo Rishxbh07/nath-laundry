@@ -1,14 +1,39 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
-  Shirt, 
-  Sparkles, 
-  BedDouble, 
-  Footprints, 
   Tag, 
-  RectangleVertical,
-  Layers,
-  PlusCircle
+  PlusCircle, 
+  // We keep Tag/PlusCircle from Lucide for UI consistency (fallback/buttons)
 } from 'lucide-react';
+
+// 1. Phosphor Icons
+import { 
+  PiShirtFoldedLight, // Shirt
+  PiHoodieDuotone,    // Hoodie
+} from "react-icons/pi";
+
+// 2. Ionicons 5
+import { 
+  IoShirtSharp // T-Shirt
+} from "react-icons/io5";
+
+// 3. Game Icons (The bulk of your request)
+import { 
+  GiSleevelessTop,  // Top
+  GiShirt,          // Kurta
+  GiTrousers,       // Trouser
+  GiShorts,         // Shorts
+  GiSkirt,          // Skirt
+  GiTowel,          // Lungi, Dhoti, Towel
+  GiSchoolBag,      // Bag
+  GiAmpleDress,     // Saree (Closest match for heavy ethnic wear)
+  GiRunningShoe,    // Shoes
+  GiBed,            // Bedding/Blankets
+  GiTheaterCurtains,// Curtains
+  GiPrayer,         // Carpet (closest available icon)
+  GiPillow,         // Pillow
+  GiLeatherBoot,    // Leather items?
+  GiHandBag         // Handbag
+} from "react-icons/gi";
 
 interface ItemSelectorProps {
   items: any[];
@@ -16,18 +41,69 @@ interface ItemSelectorProps {
   onCustomClick: () => void;
 }
 
+// Helper to map item names to the requested icons
 const getIcon = (itemName: string, category: string) => {
   const name = itemName.toLowerCase();
   const cat = category.toLowerCase();
 
-  if (name.includes('saree') || name.includes('sari')) return <Sparkles size={20} strokeWidth={1.5} />;
-  if (name.includes('shoe') || name.includes('sandal')) return <Footprints size={20} strokeWidth={1.5} />;
-  if (name.includes('sheet') || name.includes('blanket') || name.includes('cover')) return <BedDouble size={20} strokeWidth={1.5} />;
+  // --- 1. User Specified Mappings ---
   
-  if (cat.includes('upper') || cat.includes('top') || cat.includes('shirt')) return <Shirt size={20} strokeWidth={1.5} />;
-  if (cat.includes('lower') || cat.includes('bottom') || cat.includes('pant')) return <RectangleVertical size={20} strokeWidth={1.5} />;
-  if (cat.includes('ethnic') || cat.includes('suit')) return <Layers size={20} strokeWidth={1.5} />;
+  // Shirt -> PiShirtFoldedLight
+  if (name === 'shirt') return <PiShirtFoldedLight size={22} />;
   
+  // T-Shirt -> IoShirtSharp
+  if (name === 't-shirt') return <IoShirtSharp size={20} />;
+  
+  // Top -> GiSleevelessTop
+  if (name === 'top') return <GiSleevelessTop size={20} />;
+  
+  // Kurta -> GiShirt
+  if (name.includes('kurta') || name.includes('sherwani') || name.includes('bandhgala')) return <GiShirt size={20} />;
+  
+  // Hoodie/Sweatshirt -> PiHoodieDuotone
+  if (name.includes('hoodie') || name.includes('sweat') || name.includes('jacket')) return <PiHoodieDuotone size={22} />;
+  
+  // Trouser/Jeans -> GiTrousers
+  if (name.includes('trouser') || name.includes('jeans') || name.includes('leggings') || name.includes('track') || name.includes('pajama')) return <GiTrousers size={20} />;
+  
+  // Shorts -> GiShorts
+  if (name.includes('shorts')) return <GiShorts size={20} />;
+  
+  // Skirt -> GiSkirt
+  if (name.includes('skirt')) return <GiSkirt size={20} />;
+  
+  // Lungi/Dhoti/Towel -> GiTowel
+  if (name.includes('lungi') || name.includes('dhoti') || name.includes('towel') || name.includes('stole') || name.includes('shawl')) return <GiTowel size={22} />;
+
+  // Saree/Lehenga/Gown -> GiAmpleDress (Represents flowing ethnic wear well)
+  if (name.includes('saree') || name.includes('lehenga') || name.includes('gown') || name.includes('anarkali') || name.includes('salwar')) return <GiAmpleDress size={22} />;
+
+  // Bag -> GiSchoolBag / GiHandBag
+  if (name.includes('bag') && !name.includes('hand')) return <GiSchoolBag size={20} />;
+  if (name.includes('backpack')) return <GiSchoolBag size={20} />;
+  if (name.includes('handbag')) return <GiHandBag size={20} />;
+
+  // --- 2. Extra Mappings for SQL Items ---
+
+  // Shoes
+  if (name.includes('shoe') || name.includes('boot')) return <GiRunningShoe size={20} />;
+  
+  // Bedding
+  if (name.includes('bed') || name.includes('blanket')) return <GiBed size={22} />;
+  
+  // Pillow
+  if (name.includes('pillow') || name.includes('cushion')) return <GiPillow size={20} />;
+  
+  // Curtains
+  if (name.includes('curtain')) return <GiTheaterCurtains size={20} />;
+  
+  // Carpet / Rug / Mat -> GiPrayer (since GiPrayerRug doesn't exist)
+  if (name.includes('carpet') || name.includes('rug') || name.includes('mat')) return <GiPrayer size={20} />;
+  
+  // Blouse (Regular or Ethnic) - Fallback to SleevelessTop if not caught
+  if (name.includes('blouse')) return <GiSleevelessTop size={20} />;
+
+  // Default Fallback
   return <Tag size={18} strokeWidth={1.5} />;
 };
 
@@ -131,3 +207,11 @@ export default function ItemSelector({ items, onSelect, onCustomClick }: ItemSel
     </div>
   );
 }
+
+
+//the imports dont work as they supposed to because of the different icon libraries used.//however, the code logic and structure is complete and functional.import React, { useState, useMemo, useEffect } from 'react';
+// import { 
+//   Tag, 
+//   PlusCircle, 
+//   // We keep Tag/PlusCircle from Lucide for UI consistency (fallback/buttons)
+// } from 'lucide-react';

@@ -1,10 +1,10 @@
+// File: app/orders/steps/ItemStep.tsx
 'use client';
 
 import React, { useState } from 'react';
 import { UseFormReturn } from 'react-hook-form';
 import { CreateOrderInput } from '@/app/lib/schemas/order';
 
-// Import our new modules
 import { useOrderCalculator } from './items/useOrderCalculator';
 import BulkHeader from './items/BulkHeader';
 import ItemSelector from './items/ItemSelector';
@@ -15,25 +15,24 @@ interface ItemsStepProps {
   form: UseFormReturn<CreateOrderInput>;
   dbItems: any[];
   settings: any;
+  specialRates: any[]; // New Prop
 }
 
-export default function ItemsStep({ form, dbItems, settings }: ItemsStepProps) {
-  // 1. State Management
+export default function ItemsStep({ form, dbItems, settings, specialRates }: ItemsStepProps) {
   const [bulkWeight, setBulkWeight] = useState<number>(form.watch('bulk_weight') || 0);
   const [bulkService, setBulkService] = useState<'Wash & Fold' | 'Wash & Iron'>('Wash & Fold');
   const [manifest, setManifest] = useState<any[]>([]);
   const [activeItem, setActiveItem] = useState<any | null>(null);
 
-  // 2. Logic Hook (Calculates prices and syncs to React Hook Form)
   useOrderCalculator({
     form,
     settings,
     manifest,
     bulkWeight,
-    bulkService
+    bulkService,
+    specialRates // Pass it here
   });
 
-  // 3. Handlers
   const handleAddItem = (data: { qty: number; weight: number; service: string }) => {
     if (!activeItem) return;
     setManifest(prev => [...prev, {
@@ -42,7 +41,7 @@ export default function ItemsStep({ form, dbItems, settings }: ItemsStepProps) {
       weight: data.weight,
       service_type: data.service
     }]);
-    setActiveItem(null); // Close modal
+    setActiveItem(null); 
   };
 
   const handleRemoveItem = (index: number) => {
@@ -71,7 +70,6 @@ export default function ItemsStep({ form, dbItems, settings }: ItemsStepProps) {
         bulkWeight={bulkWeight} 
       />
 
-      {/* Item Config Modal (Only shows when activeItem is set) */}
       {activeItem && (
         <ItemConfigSheet 
           item={activeItem}
