@@ -4,7 +4,6 @@
 import { createClient } from '@/app/utils/supabase/server'
 import { CreateOrderInput } from '@/app/lib/schemas/order'
 import { revalidatePath } from 'next/cache'
-import { redirect } from 'next/navigation'
 
 export async function fetchLaundryMeta() {
   const supabase = await createClient();
@@ -60,14 +59,26 @@ export async function submitOrder(data: CreateOrderInput, branchId: string) {
     payment_method: data.payment_status === 'PAID' ? data.payment_method : null
   };
 
-  // Call the SQL function we created earlier
+  // Prepare Items: Format specifically for the SQL function
+  // We need to ensure 'item_id' is null for generated rows (like Bulk Base) 
+  // if they don't have a specific DB ID
+  const formattedItems = data.items.map(item => ({
+    ...item,
+    // If item_id is missing (undefined/empty string), send null to DB.
+    // The DB RPC function must handle NULL item_id in order_items insert.
+    item_id: item.item_id || null, 
+    // Ensure the snapshot name is explicitly passed
+    item_name_snapshot: item.item_name 
+  }));
+
+  // Call the SQL function created earlier
   const { data: orderId, error } = await supabase.rpc('create_full_order', {
     p_branch_id: branchId,
     p_customer_phone: data.customer_phone,
     p_customer_name: data.customer_name,
     p_customer_address: data.customer_address || '',
     p_order_details: orderPayload,
-    p_items: data.items
+    p_items: formattedItems
   });
 
   if (error) {

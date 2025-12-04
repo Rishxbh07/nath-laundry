@@ -2,14 +2,15 @@
 import { z } from 'zod';
 
 export const orderItemSchema = z.object({
-  item_id: z.string().uuid(),
+  item_id: z.string().uuid().optional(), // Optional because "Bulk Base" isn't in your items DB
   item_name: z.string(),
-  // Updated Service Types
-  service_type: z.enum(['Wash & Fold', 'Wash & Iron', 'Dry Clean', 'Iron']),
+  service_type: z.enum(['Wash & Fold', 'Wash & Iron', 'Dry Clean', 'Iron', 'Calculated']),
   quantity: z.number().min(1, "Qty must be at least 1"),
-  weight: z.number().optional(), // For KG based items
-  unit_price: z.number().min(0),
+  weight: z.number().optional(), 
+  unit_price: z.number().min(0), // Allow 0 for inventory items
   total_price: z.number().min(0),
+  // Add a flag to help the UI distinguish "Real" items from "Base" charges
+  is_base_charge: z.boolean().optional(),
 });
 
 export const createOrderSchema = z.object({
@@ -18,8 +19,11 @@ export const createOrderSchema = z.object({
   customer_name: z.string().min(2, "Name is required"),
   customer_address: z.string().optional(),
   
-  // Step 2: Items
+  // Step 2: Items (The final calculated list goes here)
   items: z.array(orderItemSchema).min(1, "Add at least one item"),
+  
+  // New Field: To store the Bulk Weight specifically for UI retention
+  bulk_weight: z.number().optional(), 
   
   // Step 3: Delivery & Meta
   delivery_mode: z.enum(['PICKUP', 'DELIVERY']),

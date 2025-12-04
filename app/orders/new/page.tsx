@@ -1,4 +1,3 @@
-// File: app/orders/new/page.tsx
 import React from 'react';
 import { fetchLaundryMeta } from '@/app/actions/order';
 import OrderWizard from '@/app/orders/OrderWizard';
@@ -10,19 +9,13 @@ export default async function NewOrderPage() {
   try {
     meta = await fetchLaundryMeta();
   } catch (e) {
-    // If auth fails or no branch assigned, kick them out
     redirect('/login');
   }
 
+  // We removed the header from here so OrderWizard controls the full layout
   return (
-    <main className="min-h-screen bg-white flex flex-col">
-      {/* Header */}
-      <div className="bg-white/80 backdrop-blur-md sticky top-0 z-40 border-b border-slate-50 px-6 py-4">
-        <h1 className="text-xl font-bold text-slate-800">New Order</h1>
-        <p className="text-xs text-slate-400">Create a bill for {new Date().toLocaleDateString()}</p>
-      </div>
-
-      <div className="flex-1 p-6 pb-28">
+    <main className="min-h-screen bg-slate-50 flex flex-col">
+      <div className="flex-1 flex flex-col h-screen">
         <OrderWizard 
           branchId={meta.branch_id} 
           items={meta.items}

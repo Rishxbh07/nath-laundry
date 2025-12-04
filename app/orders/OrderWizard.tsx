@@ -5,12 +5,12 @@ import { useForm, SubmitHandler } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { createOrderSchema, CreateOrderInput } from '@/app/lib/schemas/order';
 import { submitOrder } from '@/app/actions/order';
-import { ChevronRight, ChevronLeft, Check, X } from 'lucide-react';
+import { ChevronRight, ChevronLeft, Check, X, User, Shirt, Truck, IndianRupee } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
-// --- Import the Modular Step Components ---
+// Import Steps
 import CustomerStep from './steps/CustomerStep';
-import ItemsStep from '../orders/steps/ItemStep';
+import ItemsStep from './steps/ItemStep';
 import DeliveryStep from './steps/DeliveryStep';
 import ReviewStep from './steps/ReviewStep';
 
@@ -20,23 +20,25 @@ interface OrderWizardProps {
   settings: any;
 }
 
-const STEPS = ['Customer', 'Items', 'Delivery', 'Review'];
+const STEPS = [
+  { label: 'Customer', icon: User },
+  { label: 'Items', icon: Shirt },
+  { label: 'Delivery', icon: Truck },
+  { label: 'Billing', icon: IndianRupee },
+];
 
 export default function OrderWizard({ branchId, items: dbItems, settings }: OrderWizardProps) {
   const [currentStep, setCurrentStep] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const router = useRouter();
 
-  // Initialize the form once at the top level
   const form = useForm<CreateOrderInput>({
-    // Cast to any to avoid strict type conflict between react-hook-form versions
     resolver: zodResolver(createOrderSchema) as any,
     defaultValues: {
       delivery_mode: 'PICKUP',
       discount_amount: 0,
       payment_status: 'UNPAID',
       items: [],
-      // Default due date: 3 days from now
       due_date: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
     },
     mode: 'onChange' 
@@ -44,16 +46,13 @@ export default function OrderWizard({ branchId, items: dbItems, settings }: Orde
 
   const { trigger, handleSubmit } = form;
 
-  // --- Navigation Logic ---
   const nextStep = async () => {
     let fieldsToValidate: any[] = [];
     
-    // Validate only the fields for the current step before moving forward
     if (currentStep === 0) fieldsToValidate = ['customer_phone', 'customer_name'];
     if (currentStep === 1) fieldsToValidate = ['items'];
-    if (currentStep === 2) fieldsToValidate = ['delivery_mode', 'due_date'];
+    if (currentStep === 2) fieldsToValidate = ['delivery_mode', 'due_date', 'customer_address']; 
 
-    // @ts-ignore: Trigger accepts string[] but strict types can be picky
     const isStepValid = await trigger(fieldsToValidate);
     
     if (isStepValid) {
@@ -69,7 +68,6 @@ export default function OrderWizard({ branchId, items: dbItems, settings }: Orde
     }
   };
 
-  // --- Final Submission ---
   const onSubmit: SubmitHandler<CreateOrderInput> = async (data) => {
     if(!confirm("Are you sure you want to create this bill?")) return;
     
@@ -80,53 +78,92 @@ export default function OrderWizard({ branchId, items: dbItems, settings }: Orde
     if (result.error) {
       alert(`Error: ${result.error}`);
     } else {
-      router.push('/'); // Redirect to home or receipt page
+      router.push('/');
     }
   };
 
   return (
-    <div className="flex flex-col h-full bg-white relative">
+    <div className="flex flex-col h-full bg-slate-50 relative">
       
-      {/* 1. Header with Close Button & Progress Dots */}
-      <div className="flex items-center justify-between mb-6 px-1">
-        <button 
-          onClick={handleCancel}
-          className="h-10 w-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 hover:bg-slate-200 active:scale-95 transition-all"
-        >
-          <X size={20} />
-        </button>
+      {/* 1. Main Header & Stepper Area */}
+      <div className="bg-white shadow-sm border-b border-slate-100 z-20">
         
-        {/* Progress Indicator */}
-        <div className="flex gap-1">
-          {STEPS.map((_, idx) => (
-            <div 
-              key={idx} 
-              className={`h-1.5 w-8 rounded-full transition-all duration-300 ${idx <= currentStep ? 'bg-blue-600' : 'bg-slate-100'}`} 
-            />
-          ))}
+        {/* Top Row: Title & Close Button */}
+        <div className="flex items-center justify-between px-6 py-4">
+          <div>
+            <h1 className="text-xl font-bold text-slate-800">New Order</h1>
+            <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wide">
+              {new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}
+            </p>
+          </div>
+          <button 
+            onClick={handleCancel}
+            className="h-10 w-10 rounded-full bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-400 hover:bg-red-50 hover:text-red-500 hover:border-red-100 active:scale-95 transition-all"
+          >
+            <X size={20} />
+          </button>
         </div>
-        
-        <div className="w-10" /> {/* Spacer to keep progress dots centered */}
+
+        {/* Centered Stepper */}
+        <div className="pb-4 pt-1">
+          <div className="flex justify-center">
+            <div className="relative flex items-center w-full max-w-xs justify-between px-4">
+              
+              {/* Connecting Line Background */}
+              <div className="absolute top-1/2 left-4 right-4 h-0.5 bg-slate-100 -z-10" />
+              
+              {/* Active Line Progress */}
+              <div 
+                className="absolute top-1/2 left-4 h-0.5 bg-blue-600 -z-10 transition-all duration-500 ease-out" 
+                style={{ width: `calc(${(currentStep / (STEPS.length - 1)) * 100}% - 32px)` }} // Adjust for padding
+              />
+
+              {STEPS.map((step, idx) => {
+                const isActive = idx <= currentStep;
+                const isCurrent = idx === currentStep;
+                const StepIcon = step.icon;
+
+                return (
+                  <div key={idx} className="flex flex-col items-center gap-1.5 bg-white px-1">
+                    <div 
+                      className={`h-9 w-9 rounded-full flex items-center justify-center transition-all duration-300 border-2 ${
+                        isActive 
+                          ? 'bg-blue-600 border-blue-600 text-white shadow-md shadow-blue-200 scale-110' 
+                          : 'bg-white border-slate-200 text-slate-300'
+                      }`}
+                    >
+                      <StepIcon size={16} strokeWidth={2.5} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          {/* Step Label */}
+          <div className="text-center mt-2">
+            <p className="text-xs font-bold text-slate-600 uppercase tracking-widest">{STEPS[currentStep].label}</p>
+          </div>
+        </div>
       </div>
 
       {/* 2. Dynamic Content Area */}
-      <div className="flex-1 overflow-y-auto pb-4 scrollbar-hide">
+      <div className="flex-1 overflow-y-auto p-6 pb-32 scrollbar-hide">
         {currentStep === 0 && <CustomerStep form={form} />}
         {currentStep === 1 && <ItemsStep form={form} dbItems={dbItems} settings={settings} />}
         {currentStep === 2 && <DeliveryStep form={form} />}
         {currentStep === 3 && <ReviewStep form={form} />}
       </div>
 
-      {/* 3. Footer Actions (Z-Index Fixed) */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white p-4 border-t border-slate-100 flex gap-4 z-100">
+      {/* 3. Footer Actions */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white p-4 border-t border-slate-100 flex gap-4 z-30 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
         
         {currentStep > 0 && (
           <button 
             type="button"
             onClick={prevStep}
-            className="flex-1 bg-slate-100 text-slate-600 font-bold py-4 rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-transform"
+            className="w-16 bg-slate-100 text-slate-600 font-bold py-4 rounded-2xl flex items-center justify-center active:scale-95 transition-transform hover:bg-slate-200"
           >
-            <ChevronLeft size={18} /> Back
+            <ChevronLeft size={24} />
           </button>
         )}
         
@@ -134,18 +171,18 @@ export default function OrderWizard({ branchId, items: dbItems, settings }: Orde
           <button 
             type="button"
             onClick={nextStep}
-            className="flex-2 bg-blue-600 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-blue-200 active:scale-95 transition-transform"
+            className="flex-1 bg-blue-600 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-blue-200 active:scale-95 transition-transform hover:bg-blue-700"
           >
-            Next <ChevronRight size={18} />
+            Next Step <ChevronRight size={20} />
           </button>
         ) : (
           <button 
             type="button"
             onClick={handleSubmit(onSubmit)}
             disabled={isSubmitting}
-            className="flex-2 bg-green-600 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-green-200 active:scale-95 transition-transform disabled:opacity-70 disabled:cursor-not-allowed"
+            className="flex-1 bg-green-600 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-green-200 active:scale-95 transition-transform disabled:opacity-70 disabled:cursor-not-allowed hover:bg-green-700"
           >
-            {isSubmitting ? 'Creating...' : 'Finish Order'} <Check size={18} />
+            {isSubmitting ? 'Creating...' : 'Confirm Order'} <Check size={20} />
           </button>
         )}
       </div>

@@ -1,3 +1,4 @@
+// File: app/orders/steps/ReviewStep.tsx
 'use client';
 
 import React from 'react';
@@ -11,6 +12,8 @@ interface ReviewStepProps {
 export default function ReviewStep({ form }: ReviewStepProps) {
   const { register, watch, setValue } = form;
   const watchedItems = watch('items');
+  
+  // Calculate total dynamically from the items list
   const watchedTotal = watchedItems?.reduce((sum, i) => sum + i.total_price, 0) || 0;
   
   const discount = watch('discount_amount') || 0;
@@ -19,6 +22,8 @@ export default function ReviewStep({ form }: ReviewStepProps) {
 
   return (
     <div className="space-y-6 animate-in slide-in-from-right-4 duration-300">
+      
+      {/* Bill Summary Card */}
       <div className="bg-slate-900 text-white p-6 rounded-3xl shadow-xl shadow-slate-200">
         <div className="flex justify-between items-start">
           <div>
@@ -26,19 +31,52 @@ export default function ReviewStep({ form }: ReviewStepProps) {
             <h2 className="text-4xl font-bold mt-1">₹{finalAmount}</h2>
           </div>
           <div className="text-right">
-            <p className="text-slate-400 text-xs font-bold">{watchedItems?.length} Items</p>
-            <p className="text-slate-300 text-xs mt-1">{watch('customer_name')}</p>
+            <p className="text-slate-400 text-xs font-bold">{watchedItems?.length} Lines</p>
+            <p className="text-slate-300 text-xs mt-1 truncate max-w-[150px]">{watch('customer_name')}</p>
           </div>
         </div>
       </div>
 
+      {/* Item Breakdown (The Invoice View) */}
+      <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 max-h-60 overflow-y-auto">
+        <h4 className="text-xs font-bold text-slate-400 uppercase mb-3">Order Manifest</h4>
+        <div className="space-y-3">
+          {watchedItems?.map((item, idx) => (
+            <div key={idx} className="flex justify-between items-start text-sm">
+              <div className="flex flex-col">
+                <span className={item.total_price === 0 ? "text-slate-500" : "text-slate-800 font-bold"}>
+                  {/* Show Weight if it exists (Bulk Base), otherwise Quantity (Items) */}
+                  {item.weight ? `${item.weight} kg ` : `${item.quantity}x `} 
+                  {item.item_name}
+                </span>
+                {/* Show Service Type for context */}
+                <span className="text-[10px] text-slate-400 uppercase tracking-tight">
+                  {item.service_type}
+                </span>
+              </div>
+              
+              <span className={item.total_price > 0 ? "font-bold text-slate-700" : "text-slate-300 text-xs italic"}>
+                {/* Differentiate Free Items (Manifest) vs Paid Items (Services) */}
+                {item.total_price > 0 ? `₹${item.total_price}` : 'Inv.'}
+              </span>
+            </div>
+          ))}
+          
+          {(!watchedItems || watchedItems.length === 0) && (
+            <p className="text-center text-slate-400 text-xs py-2">No items added.</p>
+          )}
+        </div>
+      </div>
+
+      {/* Payment & Discount Controls */}
       <div className="space-y-4">
         <div>
           <label className="text-xs font-bold text-slate-500 uppercase ml-1">Discount (₹)</label>
           <input 
             type="number" 
             {...register('discount_amount', { valueAsNumber: true })}
-            className="w-full mt-1 bg-white border border-slate-200 p-3 rounded-xl outline-none focus:border-blue-500"
+            className="w-full mt-1 bg-white border border-slate-200 p-3 rounded-xl outline-none focus:border-blue-500 transition-colors"
+            placeholder="0"
           />
         </div>
 
@@ -61,7 +99,10 @@ export default function ReviewStep({ form }: ReviewStepProps) {
         {paymentStatus === 'PAID' && (
           <div className="animate-in fade-in slide-in-from-top-2">
             <label className="text-xs font-bold text-slate-500 uppercase ml-1">Payment Method</label>
-            <select {...register('payment_method')} className="w-full mt-1 bg-white border border-slate-200 p-3 rounded-xl outline-none focus:border-blue-500">
+            <select 
+              {...register('payment_method')} 
+              className="w-full mt-1 bg-white border border-slate-200 p-3 rounded-xl outline-none focus:border-blue-500 transition-colors"
+            >
               <option value="CASH">Cash</option>
               <option value="UPI">UPI</option>
               <option value="OTHER">Card / Other</option>
