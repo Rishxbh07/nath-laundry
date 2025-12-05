@@ -10,8 +10,8 @@ export default function BottomNav() {
   const router = useRouter();
   const pathname = usePathname();
 
-  // Logic: If we are in the order wizard, DO NOT show this nav
-  if (pathname?.startsWith('/orders/new')) {
+  // Logic: Hide Nav on "New Order" AND "Scan" pages to prevent overlap
+  if (pathname?.startsWith('/orders/new') || pathname?.startsWith('/scan')) {
     return null;
   }
 
