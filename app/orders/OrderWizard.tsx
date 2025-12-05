@@ -1,3 +1,4 @@
+// File: app/orders/OrderWizard.tsx
 'use client';
 
 import React, { useState } from 'react';
@@ -18,7 +19,7 @@ interface OrderWizardProps {
   branchId: string;
   items: any[];
   settings: any;
-  specialRates?: any[]; // Allow it to be optional but generally expected
+  specialRates?: any[];
 }
 
 const STEPS = [
@@ -40,7 +41,9 @@ export default function OrderWizard({ branchId, items: dbItems, settings, specia
       discount_amount: 0,
       payment_status: 'UNPAID',
       items: [],
-      due_date: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+      // Default Date: 2 days from now
+      due_date: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], 
+      due_time: '18:00' 
     },
     mode: 'onChange' 
   });
@@ -50,9 +53,14 @@ export default function OrderWizard({ branchId, items: dbItems, settings, specia
   const nextStep = async () => {
     let fieldsToValidate: any[] = [];
     
+    // Step 0: Customer Validation
     if (currentStep === 0) fieldsToValidate = ['customer_phone', 'customer_name'];
+    
+    // Step 1: Items Validation
     if (currentStep === 1) fieldsToValidate = ['items'];
-    if (currentStep === 2) fieldsToValidate = ['delivery_mode', 'due_date', 'customer_address']; 
+    
+    // Step 2: Delivery Validation (Added 'due_time')
+    if (currentStep === 2) fieldsToValidate = ['delivery_mode', 'due_date', 'due_time', 'customer_address']; 
 
     const isStepValid = await trigger(fieldsToValidate);
     
@@ -121,7 +129,6 @@ export default function OrderWizard({ branchId, items: dbItems, settings, specia
 
               {STEPS.map((step, idx) => {
                 const isActive = idx <= currentStep;
-                const isCurrent = idx === currentStep;
                 const StepIcon = step.icon;
 
                 return (
@@ -155,7 +162,7 @@ export default function OrderWizard({ branchId, items: dbItems, settings, specia
               form={form} 
               dbItems={dbItems} 
               settings={settings} 
-              specialRates={specialRates} // Pass it down
+              specialRates={specialRates}
            />
         )}
         {currentStep === 2 && <DeliveryStep form={form} />}

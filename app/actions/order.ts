@@ -30,7 +30,7 @@ export async function fetchLaundryMeta() {
     branch_id: profile.branch_id,
     items: itemsRes.data || [],
     settings: settingsRes.data || null,
-    specialRates: ratesRes.data || [], // Pass this to the UI
+    specialRates: ratesRes.data || [], 
   };
 }
 
@@ -47,26 +47,40 @@ export async function searchCustomer(phone: string) {
 export async function submitOrder(data: CreateOrderInput, branchId: string) {
   const supabase = await createClient();
 
-  // Calculate totals purely for the Header record
+  // 1. Calculate Financial Totals
   const totalAmount = data.items.reduce((sum, item) => sum + item.total_price, 0);
   const finalAmount = totalAmount - (data.discount_amount || 0);
 
+  // 2. Merge Date & Time
+  // Combine the date (2023-12-04) and time (18:30) into a full ISO string
+  const combinedDateTime = `${data.due_date}T${data.due_time}:00`; 
+  const finalDueDate = new Date(combinedDateTime).toISOString();
+
+  // 3. Prepare Order Payload
   const orderPayload = {
     delivery_mode: data.delivery_mode,
-    due_date: data.due_date,
+    due_date: finalDueDate, // The merged timestamp
     discount_amount: data.discount_amount,
     total_amount: totalAmount,
     final_amount: finalAmount < 0 ? 0 : finalAmount,
     payment_status: data.payment_status,
-    payment_method: data.payment_status === 'PAID' ? data.payment_method : null
+    payment_method: data.payment_status === 'PAID' ? data.payment_method : null,
+    
+    // Critical: Pass the manual inventory count for tracking
+    // Note: Ensure your DB 'create_full_order' function handles/ignores extra fields 
+    // or store this in a 'notes' or 'metadata' column if 'total_piece_count' column doesn't exist.
+    total_piece_count: data.total_item_count 
   };
 
+  // 4. Format Items (Handle Custom Items)
   const formattedItems = data.items.map(item => ({
     ...item,
+    // Custom items have no DB ID, so we must send null
     item_id: item.item_id || null, 
     item_name_snapshot: item.item_name 
   }));
 
+  // 5. Call Database Function
   const { data: orderId, error } = await supabase.rpc('create_full_order', {
     p_branch_id: branchId,
     p_customer_phone: data.customer_phone,

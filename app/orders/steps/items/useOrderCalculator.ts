@@ -9,7 +9,7 @@ interface CalculatorProps {
   manifest: any[];
   bulkWeight: number;
   bulkService: 'Wash & Fold' | 'Wash & Iron';
-  specialRates: any[]; // Changed from optional to required for better type safety
+  specialRates: any[];
 }
 
 export function useOrderCalculator({ 
@@ -25,14 +25,14 @@ export function useOrderCalculator({
 
   // Constants derived from settings
   const RATES = {
-    wf_kg: Number(settings.wf_kg_rate || 45),
-    wi_kg: Number(settings.wi_kg_rate || 60),
-    iron_piece: Number(settings.iron_only_piece_rate || 8),
-    small_piece: Number(settings.small_order_piece_rate || 15),
-    blanket_flat: Number(settings.blanket_flat_rate || 100),
-    blanket_kg: Number(settings.blanket_kg_rate || 80),
-    blanket_threshold: Number(settings.blanket_flat_threshold_kg || 1.5),
-    dry_clean_default: 50, // Industry Standard Default
+    wf_kg: Number(settings?.wf_kg_rate || 45),
+    wi_kg: Number(settings?.wi_kg_rate || 60),
+    iron_piece: Number(settings?.iron_only_piece_rate || 8),
+    small_piece: Number(settings?.small_order_piece_rate || 15),
+    blanket_flat: Number(settings?.blanket_flat_rate || 100),
+    blanket_kg: Number(settings?.blanket_kg_rate || 80),
+    blanket_threshold: Number(settings?.blanket_flat_threshold_kg || 1.5),
+    dry_clean_default: 50,
   };
 
   useEffect(() => {
@@ -58,6 +58,9 @@ export function useOrderCalculator({
     manifest.forEach(entry => {
       let price = 0;
       let serviceLabel = entry.service_type;
+      
+      // Check flags
+      const isManual = entry.item.kind === 'MANUAL';
       const isSpecialKind = entry.item.kind === 'SPECIAL';
 
       // --- Helper to find specific rates ---
@@ -67,21 +70,23 @@ export function useOrderCalculator({
         )?.rate_value;
       };
 
-      // --- Logic A: Standard Service (Wash & Fold / Wash & Iron) ---
-      if (entry.service_type === 'Standard') {
+      // --- Logic 0: Manual / Custom Item (Highest Priority) ---
+      if (isManual) {
+        price = Number(entry.manual_rate || 0);
+        // serviceLabel is already set to 'Custom' or user input
+      }
+
+      // --- Logic A: Standard Service ---
+      else if (entry.service_type === 'Standard') {
         if (isSpecialKind) {
-          // Case: Shoes, Toys, Bags (Special items are NEVER free/bulk)
-          // We look for a specific 'Standard' or 'Wash' rate in the DB
           const customRate = getSpecialRate('Standard') || getSpecialRate('Wash');
-          price = Number(customRate || 50); // Default to 50 if DB entry missing (Safe fallback for Shoes)
+          price = Number(customRate || 50); 
           serviceLabel = 'Special Wash';
         } else if (bulkWeight === 0 && entry.item.default_unit === 'PIECE') {
-          // Case: Small Order Mode (No bulk weight entered, e.g., 2 shirts)
           price = RATES.small_piece;
           serviceLabel = 'Piece Wash';
         } else {
-          // Case: Included in Bulk Pile (Price is 0)
-          price = 0;
+          price = 0; // In Bulk Pile
           serviceLabel = bulkService; 
         }
       }
@@ -95,13 +100,11 @@ export function useOrderCalculator({
       // --- Logic C: Dry Clean ---
       else if (entry.service_type === 'Dry Clean') {
          const customRate = getSpecialRate('Dry Clean');
-         // Fallback: If Saree (120 in DB) -> uses DB. If Pant -> uses default 50.
          price = Number(customRate || RATES.dry_clean_default);
       }
 
-      // --- Logic D: Weight Based Specials (Blankets/Curtains) ---
-      // This overrides previous price if the item is sold by KG (and isn't just a bulk item)
-      if (entry.item.default_unit === 'KG') {
+      // --- Logic D: Weight Based Specials Override ---
+      if (!isManual && entry.item.default_unit === 'KG') {
          const w = entry.weight || 0;
          if (w <= RATES.blanket_threshold) {
             price = RATES.blanket_flat;
@@ -111,20 +114,21 @@ export function useOrderCalculator({
          serviceLabel = 'Heavy Wash';
       }
 
+      // 3. Push Calculated Item
       finalBillItems.push({
-        item_id: entry.item.id,
+        item_id: isManual ? null : entry.item.id, // Ensure NULL ID for custom items
         item_name: entry.item.name,
         service_type: serviceLabel,
         quantity: entry.quantity,
         weight: entry.weight,
         unit_price: price,
-        total_price: price * (entry.item.default_unit === 'KG' ? 1 : entry.quantity)
+        total_price: price * (entry.item.default_unit === 'KG' ? (entry.weight || 1) : entry.quantity)
       });
     });
 
-    // 3. Sync to Form
+    // 4. Sync to Form
     replace(finalBillItems);
     setValue('bulk_weight', bulkWeight);
 
-  }, [bulkWeight, bulkService, manifest, settings, replace, setValue, specialRates]); // Added specialRates dependency
+  }, [bulkWeight, bulkService, manifest, settings, replace, setValue, specialRates]);
 }

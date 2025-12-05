@@ -9,13 +9,14 @@ import { useOrderCalculator } from './items/useOrderCalculator';
 import BulkHeader from './items/BulkHeader';
 import ItemSelector from './items/ItemSelector';
 import ItemConfigSheet from './items/ItemConfigSheet';
+import CustomItemSheet from './items/CustomItemSheet'; // Import New Component
 import ManifestList from './items/ManifestList';
 
 interface ItemsStepProps {
   form: UseFormReturn<CreateOrderInput>;
   dbItems: any[];
   settings: any;
-  specialRates: any[]; // New Prop
+  specialRates: any[];
 }
 
 export default function ItemsStep({ form, dbItems, settings, specialRates }: ItemsStepProps) {
@@ -23,6 +24,7 @@ export default function ItemsStep({ form, dbItems, settings, specialRates }: Ite
   const [bulkService, setBulkService] = useState<'Wash & Fold' | 'Wash & Iron'>('Wash & Fold');
   const [manifest, setManifest] = useState<any[]>([]);
   const [activeItem, setActiveItem] = useState<any | null>(null);
+  const [showCustomSheet, setShowCustomSheet] = useState(false); // New State
 
   useOrderCalculator({
     form,
@@ -30,9 +32,10 @@ export default function ItemsStep({ form, dbItems, settings, specialRates }: Ite
     manifest,
     bulkWeight,
     bulkService,
-    specialRates // Pass it here
+    specialRates
   });
 
+  // Standard DB Item Handler
   const handleAddItem = (data: { qty: number; weight: number; service: string }) => {
     if (!activeItem) return;
     setManifest(prev => [...prev, {
@@ -42,6 +45,11 @@ export default function ItemsStep({ form, dbItems, settings, specialRates }: Ite
       service_type: data.service
     }]);
     setActiveItem(null); 
+  };
+
+  // Custom Item Handler (Directly adds entry)
+  const handleAddCustomItem = (customEntry: any) => {
+    setManifest(prev => [...prev, customEntry]);
   };
 
   const handleRemoveItem = (index: number) => {
@@ -61,7 +69,7 @@ export default function ItemsStep({ form, dbItems, settings, specialRates }: Ite
       <ItemSelector 
         items={dbItems} 
         onSelect={setActiveItem}
-        onCustomClick={() => {}}
+        onCustomClick={() => setShowCustomSheet(true)} // Hooked up
       />
 
       <ManifestList 
@@ -70,12 +78,21 @@ export default function ItemsStep({ form, dbItems, settings, specialRates }: Ite
         bulkWeight={bulkWeight} 
       />
 
+      {/* Standard Item Config */}
       {activeItem && (
         <ItemConfigSheet 
           item={activeItem}
           bulkService={bulkService}
           onClose={() => setActiveItem(null)}
           onConfirm={handleAddItem}
+        />
+      )}
+
+      {/* Custom Item Config */}
+      {showCustomSheet && (
+        <CustomItemSheet 
+          onClose={() => setShowCustomSheet(false)}
+          onConfirm={handleAddCustomItem}
         />
       )}
     </div>
