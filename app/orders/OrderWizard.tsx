@@ -1,13 +1,16 @@
 // File: app/orders/OrderWizard.tsx
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useForm, SubmitHandler } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { createOrderSchema, CreateOrderInput } from '@/app/lib/schemas/order';
-import { submitOrder } from '@/app/actions/order';
-import { ChevronRight, ChevronLeft, Check, X, User, Shirt, Truck, IndianRupee } from 'lucide-react';
+import { submitOrder, fetchOrderDetails } from '@/app/actions/order';
+import { ChevronRight, ChevronLeft, Check, X, User, Shirt, Truck, IndianRupee, Printer, Home, Send } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { useReactToPrint } from 'react-to-print';
+import { toBlob, toPng } from 'html-to-image'; // Replaced html2canvas
+import Receipt from '@/app/components/Receipt';
 
 // Import Steps
 import CustomerStep from './steps/CustomerStep';
@@ -20,6 +23,7 @@ interface OrderWizardProps {
   items: any[];
   settings: any;
   specialRates?: any[];
+  branchData?: any;
 }
 
 const STEPS = [
@@ -29,10 +33,81 @@ const STEPS = [
   { label: 'Billing', icon: IndianRupee },
 ];
 
-export default function OrderWizard({ branchId, items: dbItems, settings, specialRates = [] }: OrderWizardProps) {
+export default function OrderWizard({ 
+  branchId, 
+  items: dbItems, 
+  settings, 
+  specialRates = [], 
+  branchData 
+}: OrderWizardProps) {
   const [currentStep, setCurrentStep] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [orderSuccess, setOrderSuccess] = useState<any>(null);
   const router = useRouter();
+
+  // --- Refs ---
+  const receiptRef = useRef<HTMLDivElement>(null); // For Printing
+  const captureRef = useRef<HTMLDivElement>(null); // For Image Capture (WhatsApp)
+
+  // --- Print Handler ---
+  const handlePrint = useReactToPrint({
+    contentRef: receiptRef,
+  });
+
+  // --- WhatsApp Handler ---
+  // --- WhatsApp Handler ---
+  const handleWhatsAppShare = async () => {
+    if (!orderSuccess || !captureRef.current) return;
+
+    try {
+      // 1. Prepare Message
+      const message = `Thank you for your business. We handle the dirty work.\n\nBill ID: *${orderSuccess.readable_bill_id}*\nAmount: ₹${orderSuccess.final_amount}\n\nIf you have any complaints, use this link with your Bill ID to file feedback:\nhttps://nath-laundry.com/feedback`; 
+
+      // 2. Generate Blob
+      const blob = await toBlob(captureRef.current, { backgroundColor: '#ffffff' });
+      if (!blob) throw new Error("Failed to generate image blob");
+
+      // 3. Clean Phone Number (Remove spaces, +, etc. and ensure country code)
+      let phone = orderSuccess.customer_phone.replace(/\D/g, ''); // Remove non-digits
+      if (phone.length === 10) phone = '91' + phone; // Add India code if missing
+
+      // 4. Try Native Share (Mobile)
+      if (navigator.share && navigator.canShare && navigator.canShare({ files: [new File([blob], 'bill.png', { type: 'image/png' })] })) {
+        const file = new File([blob], `Bill-${orderSuccess.readable_bill_id}.png`, { type: 'image/png' });
+        try {
+          await navigator.share({
+            files: [file],
+            title: 'Your Laundry Bill',
+            text: message,
+          });
+          return; // Stop here if mobile share worked
+        } catch (e) {
+          console.log("Web Share skipped, falling back to desktop mode.");
+        }
+      }
+
+      // 5. Fallback: Desktop Mode
+      // A. Download Image
+      const dataUrl = await toPng(captureRef.current, { backgroundColor: '#ffffff' });
+      const link = document.createElement('a');
+      link.download = `Bill-${orderSuccess.readable_bill_id}.png`;
+      link.href = dataUrl;
+      link.click();
+
+      // B. Open WhatsApp with Text
+      const encodedMsg = encodeURIComponent(message);
+      const waUrl = `https://wa.me/${phone}?text=${encodedMsg}`;
+      
+      // Open in new tab
+      window.open(waUrl, '_blank');
+      
+      alert("Image downloaded! \n\n1. WhatsApp Web will open.\n2. The text is pre-filled.\n3. Please DRAG the downloaded bill image into the chat.");
+
+    } catch (err) {
+      console.error("Error sharing:", err);
+      alert("Failed to process WhatsApp share.");
+    }
+  };
 
   const form = useForm<CreateOrderInput>({
     resolver: zodResolver(createOrderSchema) as any,
@@ -41,7 +116,6 @@ export default function OrderWizard({ branchId, items: dbItems, settings, specia
       discount_amount: 0,
       payment_status: 'UNPAID',
       items: [],
-      // Default Date: 2 days from now
       due_date: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], 
       due_time: '18:00' 
     },
@@ -52,14 +126,8 @@ export default function OrderWizard({ branchId, items: dbItems, settings, specia
 
   const nextStep = async () => {
     let fieldsToValidate: any[] = [];
-    
-    // Step 0: Customer Validation
     if (currentStep === 0) fieldsToValidate = ['customer_phone', 'customer_name'];
-    
-    // Step 1: Items Validation
     if (currentStep === 1) fieldsToValidate = ['items'];
-    
-    // Step 2: Delivery Validation (Added 'due_time')
     if (currentStep === 2) fieldsToValidate = ['delivery_mode', 'due_date', 'due_time', 'customer_address']; 
 
     const isStepValid = await trigger(fieldsToValidate);
@@ -78,26 +146,96 @@ export default function OrderWizard({ branchId, items: dbItems, settings, specia
   };
 
   const onSubmit: SubmitHandler<CreateOrderInput> = async (data) => {
-    if(!confirm("Are you sure you want to create this bill?")) return;
+    if(!confirm("Confirm order & generate bill?")) return;
     
     setIsSubmitting(true);
     const result = await submitOrder(data, branchId);
-    setIsSubmitting(false);
-
+    
     if (result.error) {
       alert(`Error: ${result.error}`);
+      setIsSubmitting(false);
     } else {
-      router.push('/');
+      if (result.orderId) {
+         const fullOrder = await fetchOrderDetails(result.orderId);
+         setOrderSuccess(fullOrder);
+      }
+      setIsSubmitting(false);
     }
   };
 
+  // --- RENDER: Success / Preview View ---
+  if (orderSuccess) {
+    return (
+      <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center p-4">
+        <div className="bg-white rounded-3xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[95vh]">
+          
+          {/* Header */}
+          <div className="bg-green-50 p-6 flex flex-col items-center border-b border-green-100 shrink-0">
+             <div className="h-14 w-14 bg-green-100 rounded-full flex items-center justify-center text-green-600 mb-3">
+                <Check size={32} strokeWidth={3} />
+             </div>
+             <h2 className="text-xl font-bold text-slate-800">Order Confirmed!</h2>
+             <p className="text-sm text-slate-500">Bill #: {orderSuccess.readable_bill_id}</p>
+          </div>
+
+          {/* Scrollable Preview Area */}
+          <div className="flex-1 overflow-y-auto p-4 bg-slate-50/50 flex flex-col items-center">
+             
+             {/* 1. Visible Receipt for User to Check */}
+             <div className="shadow-lg transform scale-95 origin-top pointer-events-none">
+                <Receipt 
+                  ref={receiptRef} 
+                  order={orderSuccess} 
+                  branch={branchData} 
+                />
+             </div>
+
+             {/* 2. Hidden Receipt for Image Capture */}
+             {/* We position it absolute but visible to the DOM (just offscreen) so html-to-image can render it correctly */}
+             <div className="absolute top-0 left-0 -z-50 opacity-0 pointer-events-none w-[80mm]">
+                <Receipt 
+                  ref={captureRef} 
+                  order={orderSuccess} 
+                  branch={branchData} 
+                />
+             </div>
+          </div>
+
+          {/* Action Footer */}
+          <div className="p-4 border-t border-slate-100 bg-white grid grid-cols-2 gap-3 shrink-0">
+             {/* Row 1: WhatsApp (Primary) */}
+             <button 
+                onClick={handleWhatsAppShare}
+                className="col-span-2 flex items-center justify-center gap-2 py-4 bg-green-600 text-white font-bold rounded-xl hover:bg-green-700 transition-colors shadow-md shadow-green-200"
+             >
+                <Send size={20} /> Send on WhatsApp
+             </button>
+
+             {/* Row 2: Print & Home */}
+             <button 
+                onClick={() => handlePrint()}
+                className="flex items-center justify-center gap-2 py-3 bg-slate-900 text-white font-bold rounded-xl hover:bg-slate-800 transition-colors"
+             >
+                <Printer size={18} /> Print
+             </button>
+             <button 
+                onClick={() => router.push('/')}
+                className="flex items-center justify-center gap-2 py-3 bg-slate-100 text-slate-600 font-bold rounded-xl hover:bg-slate-200 transition-colors"
+             >
+                <Home size={18} /> Done
+             </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // --- RENDER: Order Wizard (Input Form) ---
   return (
     <div className="flex flex-col h-full bg-slate-50 relative">
       
       {/* 1. Main Header & Stepper Area */}
       <div className="bg-white shadow-sm border-b border-slate-100 z-20">
-        
-        {/* Top Row: Title & Close Button */}
         <div className="flex items-center justify-between px-6 py-4">
           <div>
             <h1 className="text-xl font-bold text-slate-800">New Order</h1>
@@ -113,24 +251,17 @@ export default function OrderWizard({ branchId, items: dbItems, settings, specia
           </button>
         </div>
 
-        {/* Centered Stepper */}
         <div className="pb-4 pt-1">
           <div className="flex justify-center">
             <div className="relative flex items-center w-full max-w-xs justify-between px-4">
-              
-              {/* Connecting Line Background */}
               <div className="absolute top-1/2 left-4 right-4 h-0.5 bg-slate-100 -z-10" />
-              
-              {/* Active Line Progress */}
               <div 
                 className="absolute top-1/2 left-4 h-0.5 bg-blue-600 -z-10 transition-all duration-500 ease-out" 
-                style={{ width: `calc(${(currentStep / (STEPS.length - 1)) * 100}% - 32px)` }} // Adjust for padding
+                style={{ width: `calc(${(currentStep / (STEPS.length - 1)) * 100}% - 32px)` }}
               />
-
               {STEPS.map((step, idx) => {
                 const isActive = idx <= currentStep;
                 const StepIcon = step.icon;
-
                 return (
                   <div key={idx} className="flex flex-col items-center gap-1.5 bg-white px-1">
                     <div 
@@ -147,7 +278,6 @@ export default function OrderWizard({ branchId, items: dbItems, settings, specia
               })}
             </div>
           </div>
-          {/* Step Label */}
           <div className="text-center mt-2">
             <p className="text-xs font-bold text-slate-600 uppercase tracking-widest">{STEPS[currentStep].label}</p>
           </div>
@@ -166,12 +296,11 @@ export default function OrderWizard({ branchId, items: dbItems, settings, specia
            />
         )}
         {currentStep === 2 && <DeliveryStep form={form} />}
-        {currentStep === 3 && <ReviewStep form={form} />}
+        {currentStep === 3 && <ReviewStep form={form} branchData={branchData} />}
       </div>
 
       {/* 3. Footer Actions */}
       <div className="fixed bottom-0 left-0 right-0 bg-white p-4 border-t border-slate-100 flex gap-4 z-30 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
-        
         {currentStep > 0 && (
           <button 
             type="button"
@@ -191,13 +320,14 @@ export default function OrderWizard({ branchId, items: dbItems, settings, specia
             Next Step <ChevronRight size={20} />
           </button>
         ) : (
+          // This is now the "Create Order" button on the Review Step
           <button 
             type="button"
             onClick={handleSubmit(onSubmit)}
             disabled={isSubmitting}
             className="flex-1 bg-green-600 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-green-200 active:scale-95 transition-transform disabled:opacity-70 disabled:cursor-not-allowed hover:bg-green-700"
           >
-            {isSubmitting ? 'Creating...' : 'Confirm Order'} <Check size={20} />
+            {isSubmitting ? 'Creating...' : 'Create & Save Order'} <Check size={20} />
           </button>
         )}
       </div>

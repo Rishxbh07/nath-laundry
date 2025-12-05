@@ -20,7 +20,8 @@ export default async function NewOrderPage() {
           branchId={meta.branch_id} 
           items={meta.items}
           settings={meta.settings}
-          specialRates={meta.specialRates} // Inject here
+          specialRates={meta.specialRates}
+          branchData={meta.branch} 
         />
       </div>
     </main>

@@ -1,8 +1,12 @@
+// File: app/(pages)/page.tsx
 import React from 'react';
 import Header from '../components/Header';
 import HeroSection from '../components/HeroSection';
+import StatsGrid from '../components/StatsGrid';
+import HistorySheet from '../components/HistorySheet'; // Import History
 import { createClient } from '@/app/utils/supabase/server';
 import { redirect } from 'next/navigation';
+import { fetchDailyStats } from '@/app/actions/stats';
 
 export default async function Home() {
   const supabase = await createClient();
@@ -14,11 +18,12 @@ export default async function Home() {
   }
 
   // 2. Fetch Profile & Branch Info
-  const { data: profile, error } = await supabase
+  const { data: profile } = await supabase
     .from('profiles')
     .select(`
       full_name,
       role,
+      branch_id,
       branches (
         code,
         name
@@ -27,34 +32,23 @@ export default async function Home() {
     .eq('user_id', user.id)
     .single();
 
-  if (error) {
-    console.error("Error fetching profile:", error);
-  }
+  // 3. Data Fetching
+  const stats = profile?.branch_id 
+    ? await fetchDailyStats(profile.branch_id) 
+    : { createdCount: 0, totalWeight: 0, clearedCount: 0, dueCount: 0 };
 
-  // 3. Normalize Data
   const fullName = profile?.full_name ?? 'Unknown Staff';
-  
-  // Safe access to the joined branch data (it comes as an array or object depending on relationship)
-  // @ts-ignore: Supabase types for joins can be tricky
+  // @ts-ignore: Supabase join types
   const branchData = Array.isArray(profile?.branches) ? profile.branches[0] : profile?.branches;
-  
   const branchName = branchData?.name ?? 'Unknown Branch';
   const branchCode = branchData?.code ?? 'HQ';
 
-  // 4. Role Mapping Logic
-  let displayRole = 'STAFF'; // Default fallback
+  let displayRole = 'STAFF';
   const rawRole = profile?.role;
-
-  if (rawRole === 'ADMIN') {
-    displayRole = 'OWNER';
-  } else if (rawRole === 'AUTH_USER') {
-    displayRole = 'STAFF';
-  } else if (rawRole) {
-    displayRole = rawRole; // Fallback to whatever is in DB if it doesn't match above
-  }
+  if (rawRole === 'ADMIN') displayRole = 'OWNER';
+  else if (rawRole === 'AUTH_USER') displayRole = 'STAFF';
 
   return (
-    // Added pb-32 to clear the bottom nav
     <main className="min-h-screen flex flex-col pt-24 pb-32 px-6 bg-slate-50">
       <Header />
 
@@ -64,13 +58,31 @@ export default async function Home() {
           fullName={fullName}
           branchCode={branchCode}
           branchName={branchName}
-          role={displayRole} // Pass the mapped role here
+          role={displayRole}
         />
 
-        {/* Placeholder for future content */}
-        <div className="flex flex-col items-center justify-center mt-12 text-center space-y-2 opacity-60">
-          <p className="text-slate-400 text-sm font-medium">
-            Scan a QR code to begin
+        {/* Stats Section */}
+        <div>
+          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 ml-1">
+            Today's Overview
+          </h3>
+          <StatsGrid stats={stats} />
+        </div>
+
+        {/* History Section */}
+        <div>
+           <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 ml-1">
+            Quick Actions
+          </h3>
+          {/* Only render if we have a branch ID */}
+          {profile?.branch_id && (
+            <HistorySheet branchId={profile.branch_id} />
+          )}
+        </div>
+
+        <div className="flex flex-col items-center justify-center mt-4 text-center space-y-2 opacity-40">
+          <p className="text-slate-400 text-[10px] font-medium uppercase tracking-widest">
+            Nath Laundry System v1.0
           </p>
         </div>
 

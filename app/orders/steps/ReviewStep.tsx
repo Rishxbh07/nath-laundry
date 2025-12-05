@@ -1,160 +1,86 @@
+// File: app/orders/steps/ReviewStep.tsx
 'use client';
 
-import React, { useEffect } from 'react';
+import React, { useMemo } from 'react';
 import { UseFormReturn } from 'react-hook-form';
 import { CreateOrderInput } from '@/app/lib/schemas/order';
-import { Wallet, Calculator, Shirt, AlertCircle } from 'lucide-react';
+import { Wallet } from 'lucide-react';
+import Receipt from '@/app/components/Receipt';
 
 interface ReviewStepProps {
   form: UseFormReturn<CreateOrderInput>;
+  branchData: any; // Receive branch info for the receipt
 }
 
-export default function ReviewStep({ form }: ReviewStepProps) {
+export default function ReviewStep({ form, branchData }: ReviewStepProps) {
   const { register, watch, setValue, formState: { errors } } = form;
   
-  // Watch values for calculations
-  const watchedItems = watch('items');
-  const discount = watch('discount_amount') || 0;
-  const paymentStatus = watch('payment_status');
-  const bulkWeight = watch('bulk_weight') || 0;
+  // Watch all fields needed to construct the preview
+  const formData = watch();
 
-  // 1. Calculate Financial Totals
-  const watchedTotal = watchedItems?.reduce((sum, i) => sum + i.total_price, 0) || 0;
-  const finalAmount = Math.max(0, watchedTotal - discount);
+  // Construct a "Draft Order" object that mimics the DB structure
+  const draftOrder = useMemo(() => {
+    const totalAmount = formData.items?.reduce((sum, i) => sum + i.total_price, 0) || 0;
+    const finalAmount = Math.max(0, totalAmount - (formData.discount_amount || 0));
 
-  // 2. Smart Inventory Counting Logic
-  useEffect(() => {
-    if (!watchedItems) return;
-
-    const calculatedCount = watchedItems.reduce((acc, item) => {
-      // Ignore the "Bulk Pile" line item itself (it's a charge, not a piece)
-      if (item.is_base_charge) return acc;
-
-      const qty = item.quantity || 1;
-
-      // LOGIC: Iron Only
-      // If we have a bulk pile (weight > 0), "Iron Only" items are usually 
-      // already counted in the 'Wash & Fold' list (double entry). So we ignore them.
-      // If no bulk pile, it's a pure ironing order, so we count them.
-      if (item.service_type === 'Iron Only') {
-        return bulkWeight > 0 ? acc : acc + qty;
-      }
-
-      // LOGIC: Everything Else (Standard, Dry Clean, Special, etc.)
-      // These represent physical items added to the bag. Always count them.
-      return acc + qty;
-    }, 0);
-
-    // Update the field. Users can still manually edit the input box if needed.
-    setValue('total_item_count', calculatedCount);
-
-  }, [watchedItems, bulkWeight, setValue]);
+    return {
+      ...formData,
+      total_amount: totalAmount,
+      final_amount: finalAmount,
+      // Use form data directly
+      customer_name: formData.customer_name || 'Walk-in Customer', 
+      customer_phone: formData.customer_phone || '---',
+      created_at: new Date().toISOString(), // Current time for preview
+      readable_bill_id: 'PREVIEW',
+    };
+  }, [formData]);
 
   return (
-    <div className="space-y-6 animate-in slide-in-from-right-4 duration-300 pb-10">
+    <div className="space-y-6 pb-20">
       
-      {/* SECTION 1: Inventory Control (The "Counter") */}
-      <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 relative overflow-hidden">
-        <div className="flex justify-between items-start mb-4 relative z-10">
-          <div>
-            <h3 className="text-sm font-bold text-slate-700 flex items-center gap-2">
-              <Shirt size={16} className="text-indigo-600" /> 
-              Total Garment Count
-            </h3>
-            <p className="text-[10px] text-slate-400 mt-1">
-              Estimated count based on manifest. Verify physically.
-            </p>
-          </div>
-          <div className="bg-indigo-50 px-2 py-1 rounded-lg border border-indigo-100">
-             <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider">Required</span>
-          </div>
-        </div>
+      {/* 1. Payment Controls (Discount & Status) */}
+      <div className="bg-white p-4 rounded-3xl shadow-sm border border-slate-100 space-y-4">
+        <h3 className="text-sm font-bold text-slate-700 flex items-center gap-2">
+          <Wallet size={18} className="text-blue-600" /> Payment Details
+        </h3>
+        
+        <div className="grid grid-cols-2 gap-4">
+           {/* Discount Input */}
+           <div>
+             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Discount (₹)</label>
+             <input 
+               type="number" 
+               {...register('discount_amount', { valueAsNumber: true })}
+               className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500"
+               placeholder="0"
+             />
+           </div>
 
-        <div className="flex items-center gap-4 relative z-10">
-          <div className="flex-1">
+           {/* Manual Count (Verification) */}
+           <div>
+             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Total Pcs</label>
              <input 
                type="number"
                {...register('total_item_count', { valueAsNumber: true })}
-               className="w-full text-4xl font-bold text-slate-800 bg-slate-50 border border-slate-200 rounded-2xl p-4 text-center focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 outline-none transition-all"
+               className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500"
              />
-          </div>
-          
-          {/* Quick Stats for Staff Verification */}
-          <div className="flex-1 text-xs text-slate-500 space-y-2 border-l border-slate-100 pl-4">
-             <div className="flex justify-between">
-                <span>Standard Items:</span>
-                <span className="font-bold text-slate-700">
-                  {watchedItems?.filter(i => !i.is_base_charge && i.service_type !== 'Iron Only' && i.service_type !== 'Dry Clean').reduce((a, b) => a + b.quantity, 0)}
-                </span>
-             </div>
-             <div className="flex justify-between">
-                <span>Dry Clean / Special:</span>
-                <span className="font-bold text-slate-700">
-                  {watchedItems?.filter(i => i.service_type === 'Dry Clean' || i.service_type === 'Special Wash').reduce((a, b) => a + b.quantity, 0)}
-                </span>
-             </div>
-             {bulkWeight > 0 && (
-               <div className="flex justify-between text-orange-600/80">
-                  <span>Iron Only (Ignored):</span>
-                  <span className="font-bold">
-                    {watchedItems?.filter(i => i.service_type === 'Iron Only').reduce((a, b) => a + b.quantity, 0)}
-                  </span>
-               </div>
-             )}
-          </div>
-        </div>
-        {errors.total_item_count && (
-          <p className="text-red-500 text-[10px] mt-2 font-bold text-center">{errors.total_item_count.message}</p>
-        )}
-      </div>
-
-      {/* SECTION 2: Financials */}
-      <div className="bg-slate-900 text-white p-6 rounded-3xl shadow-xl shadow-slate-200">
-        <div className="flex justify-between items-start">
-          <div>
-            <p className="text-slate-400 text-[10px] uppercase font-bold tracking-widest mb-1">Final Bill Amount</p>
-            <h2 className="text-5xl font-bold tracking-tight">₹{finalAmount}</h2>
-          </div>
-          <div className="h-12 w-12 bg-white/10 rounded-2xl flex items-center justify-center backdrop-blur-md border border-white/10">
-            <Calculator size={24} className="text-indigo-300" />
-          </div>
-        </div>
-        
-        <div className="mt-6 pt-4 border-t border-white/10 flex justify-between items-center">
-           <span className="text-xs text-slate-400 font-medium">Subtotal (Items)</span>
-           <span className="text-sm font-semibold">₹{watchedTotal}</span>
-        </div>
-      </div>
-
-      {/* SECTION 3: Payment Controls */}
-      <div className="space-y-4">
-        
-        {/* Discount */}
-        <div className="bg-white p-4 rounded-2xl border border-slate-100 flex items-center justify-between shadow-sm">
-          <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2">
-            Discount (₹)
-          </label>
-          <input 
-            type="number" 
-            {...register('discount_amount', { valueAsNumber: true })}
-            className="w-28 bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-right font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
-            placeholder="0"
-          />
+             {errors.total_item_count && <p className="text-red-500 text-[9px]">{errors.total_item_count.message}</p>}
+           </div>
         </div>
 
-        {/* Status Toggle */}
+        {/* Payment Status Toggle */}
         <div>
-          <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 tracking-widest mb-2 block">Payment Status</label>
-          <div className="flex bg-slate-100 p-1.5 rounded-2xl">
+          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-2">Payment Status</label>
+          <div className="flex bg-slate-100 p-1 rounded-xl">
             {['UNPAID', 'PAID', 'PARTIAL'].map((status) => (
               <button
                 key={status}
                 type="button"
                 onClick={() => setValue('payment_status', status as any)}
-                className={`flex-1 py-3 text-[10px] font-bold rounded-xl transition-all shadow-sm ${
-                  paymentStatus === status 
-                    ? 'bg-white text-indigo-600 shadow-md ring-1 ring-black/5' 
-                    : 'bg-transparent text-slate-400 hover:text-slate-600 shadow-none'
+                className={`flex-1 py-2 text-[10px] font-bold rounded-lg transition-all ${
+                  formData.payment_status === status 
+                    ? 'bg-white text-blue-600 shadow-sm' 
+                    : 'text-slate-400'
                 }`}
               >
                 {status}
@@ -163,28 +89,41 @@ export default function ReviewStep({ form }: ReviewStepProps) {
           </div>
         </div>
 
-        {/* Conditional Payment Method */}
-        {(paymentStatus === 'PAID' || paymentStatus === 'PARTIAL') && (
-          <div className="animate-in fade-in slide-in-from-top-2 duration-300">
-            <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 tracking-widest mb-2 block">
-              Payment Method
-            </label>
-            <div className="grid grid-cols-3 gap-3">
-               {['CASH', 'UPI', 'OTHER'].map(method => (
-                 <label key={method} className={`border rounded-xl p-3 flex flex-col items-center justify-center gap-1 cursor-pointer transition-all ${
-                   watch('payment_method') === method 
-                    ? 'bg-indigo-50 border-indigo-500 text-indigo-700 ring-1 ring-indigo-500' 
-                    : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
-                 }`}>
-                    <input type="radio" value={method} {...register('payment_method')} className="hidden" />
-                    <Wallet size={18} />
-                    <span className="text-[10px] font-bold">{method}</span>
-                 </label>
-               ))}
-            </div>
+        {/* Payment Method (Conditional) */}
+        {(formData.payment_status === 'PAID' || formData.payment_status === 'PARTIAL') && (
+          <div className="grid grid-cols-3 gap-2 animate-in fade-in slide-in-from-top-2">
+             {['CASH', 'UPI', 'OTHER'].map(method => (
+               <label key={method} className={`border rounded-xl p-2 flex flex-col items-center justify-center gap-1 cursor-pointer ${
+                 formData.payment_method === method 
+                  ? 'bg-blue-50 border-blue-500 text-blue-700' 
+                  : 'bg-white border-slate-200 text-slate-400'
+               }`}>
+                  <input type="radio" value={method} {...register('payment_method')} className="hidden" />
+                  <span className="text-[10px] font-bold">{method}</span>
+               </label>
+             ))}
           </div>
         )}
       </div>
+
+      {/* 2. Live Bill Preview */}
+      <div className="relative">
+        <div className="absolute inset-x-0 -top-3 flex justify-center">
+           <span className="bg-slate-800 text-white text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-widest shadow-md">
+             Live Bill Preview
+           </span>
+        </div>
+        
+        {/* Render the Receipt in "Preview" mode */}
+        <div className="border-4 border-slate-200 rounded-xl overflow-hidden bg-gray-50/50 p-2">
+           <Receipt 
+             order={draftOrder} 
+             branch={branchData} 
+             isPreview={true} 
+           />
+        </div>
+      </div>
+
     </div>
   );
 }
