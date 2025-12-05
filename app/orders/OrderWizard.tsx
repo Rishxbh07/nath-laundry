@@ -6,17 +6,29 @@ import { useForm, SubmitHandler } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { createOrderSchema, CreateOrderInput } from '@/app/lib/schemas/order';
 import { submitOrder, fetchOrderDetails } from '@/app/actions/order';
-import { ChevronRight, ChevronLeft, Check, X, User, Shirt, Truck, IndianRupee, Printer, Home, Send } from 'lucide-react';
+import { ChevronRight, ChevronLeft, Check, X, User, Shirt, Truck, IndianRupee, Printer, Home, Send, Loader2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useReactToPrint } from 'react-to-print';
-import { toBlob, toPng } from 'html-to-image'; // Replaced html2canvas
+import { toBlob, toPng } from 'html-to-image'; 
 import Receipt from '@/app/components/Receipt';
+import dynamic from 'next/dynamic';
 
 // Import Steps
 import CustomerStep from './steps/CustomerStep';
 import ItemsStep from './steps/ItemStep';
 import DeliveryStep from './steps/DeliveryStep';
-import ReviewStep from './steps/ReviewStep';
+
+// --- OPTIMIZATION: Lazy Load the Heavy Review Step ---
+// This prevents loading html-to-image and print libraries until the user reaches the end.
+const ReviewStep = dynamic(() => import('./steps/ReviewStep'), {
+  loading: () => (
+    <div className="flex flex-col items-center justify-center h-64 text-slate-400">
+      <Loader2 className="animate-spin mb-2" size={32} />
+      <p className="text-xs font-bold uppercase tracking-widest">Preparing Billing Engine...</p>
+    </div>
+  ),
+  ssr: false // Browser-only APIs used in Review
+});
 
 interface OrderWizardProps {
   branchId: string;
@@ -46,8 +58,8 @@ export default function OrderWizard({
   const router = useRouter();
 
   // --- Refs ---
-  const receiptRef = useRef<HTMLDivElement>(null); // For Printing
-  const captureRef = useRef<HTMLDivElement>(null); // For Image Capture (WhatsApp)
+  const receiptRef = useRef<HTMLDivElement>(null); 
+  const captureRef = useRef<HTMLDivElement>(null); 
 
   // --- Print Handler ---
   const handlePrint = useReactToPrint({
@@ -55,23 +67,18 @@ export default function OrderWizard({
   });
 
   // --- WhatsApp Handler ---
-  // --- WhatsApp Handler ---
   const handleWhatsAppShare = async () => {
     if (!orderSuccess || !captureRef.current) return;
 
     try {
-      // 1. Prepare Message
       const message = `Thank you for your business. We handle the dirty work.\n\nBill ID: *${orderSuccess.readable_bill_id}*\nAmount: ₹${orderSuccess.final_amount}\n\nIf you have any complaints, use this link with your Bill ID to file feedback:\nhttps://nath-laundry.com/feedback`; 
 
-      // 2. Generate Blob
       const blob = await toBlob(captureRef.current, { backgroundColor: '#ffffff' });
       if (!blob) throw new Error("Failed to generate image blob");
 
-      // 3. Clean Phone Number (Remove spaces, +, etc. and ensure country code)
-      let phone = orderSuccess.customer_phone.replace(/\D/g, ''); // Remove non-digits
-      if (phone.length === 10) phone = '91' + phone; // Add India code if missing
+      let phone = orderSuccess.customer_phone.replace(/\D/g, ''); 
+      if (phone.length === 10) phone = '91' + phone; 
 
-      // 4. Try Native Share (Mobile)
       if (navigator.share && navigator.canShare && navigator.canShare({ files: [new File([blob], 'bill.png', { type: 'image/png' })] })) {
         const file = new File([blob], `Bill-${orderSuccess.readable_bill_id}.png`, { type: 'image/png' });
         try {
@@ -80,25 +87,21 @@ export default function OrderWizard({
             title: 'Your Laundry Bill',
             text: message,
           });
-          return; // Stop here if mobile share worked
+          return; 
         } catch (e) {
           console.log("Web Share skipped, falling back to desktop mode.");
         }
       }
 
-      // 5. Fallback: Desktop Mode
-      // A. Download Image
       const dataUrl = await toPng(captureRef.current, { backgroundColor: '#ffffff' });
       const link = document.createElement('a');
       link.download = `Bill-${orderSuccess.readable_bill_id}.png`;
       link.href = dataUrl;
       link.click();
 
-      // B. Open WhatsApp with Text
       const encodedMsg = encodeURIComponent(message);
       const waUrl = `https://wa.me/${phone}?text=${encodedMsg}`;
       
-      // Open in new tab
       window.open(waUrl, '_blank');
       
       alert("Image downloaded! \n\n1. WhatsApp Web will open.\n2. The text is pre-filled.\n3. Please DRAG the downloaded bill image into the chat.");
@@ -191,7 +194,6 @@ export default function OrderWizard({
              </div>
 
              {/* 2. Hidden Receipt for Image Capture */}
-             {/* We position it absolute but visible to the DOM (just offscreen) so html-to-image can render it correctly */}
              <div className="absolute top-0 left-0 -z-50 opacity-0 pointer-events-none w-[80mm]">
                 <Receipt 
                   ref={captureRef} 
@@ -203,7 +205,6 @@ export default function OrderWizard({
 
           {/* Action Footer */}
           <div className="p-4 border-t border-slate-100 bg-white grid grid-cols-2 gap-3 shrink-0">
-             {/* Row 1: WhatsApp (Primary) */}
              <button 
                 onClick={handleWhatsAppShare}
                 className="col-span-2 flex items-center justify-center gap-2 py-4 bg-green-600 text-white font-bold rounded-xl hover:bg-green-700 transition-colors shadow-md shadow-green-200"
@@ -211,7 +212,6 @@ export default function OrderWizard({
                 <Send size={20} /> Send on WhatsApp
              </button>
 
-             {/* Row 2: Print & Home */}
              <button 
                 onClick={() => handlePrint()}
                 className="flex items-center justify-center gap-2 py-3 bg-slate-900 text-white font-bold rounded-xl hover:bg-slate-800 transition-colors"
@@ -320,14 +320,17 @@ export default function OrderWizard({
             Next Step <ChevronRight size={20} />
           </button>
         ) : (
-          // This is now the "Create Order" button on the Review Step
           <button 
             type="button"
             onClick={handleSubmit(onSubmit)}
             disabled={isSubmitting}
             className="flex-1 bg-green-600 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-green-200 active:scale-95 transition-transform disabled:opacity-70 disabled:cursor-not-allowed hover:bg-green-700"
           >
-            {isSubmitting ? 'Creating...' : 'Create & Save Order'} <Check size={20} />
+            {isSubmitting ? (
+                <>Creating... <Loader2 className="animate-spin" size={20}/></>
+            ) : (
+                <>Create & Save Order <Check size={20} /></>
+            )}
           </button>
         )}
       </div>

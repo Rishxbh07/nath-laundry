@@ -5,11 +5,15 @@ import { createClient } from '@/app/utils/supabase/server'
 import { CreateOrderInput } from '@/app/lib/schemas/order'
 import { revalidatePath } from 'next/cache'
 
+// --- STANDARD FETCH (No unstable_cache) ---
+// We fetch data directly to ensure the correct user session is used for RLS policies.
+// This prevents the "logout loop" issue caused by missing auth contexts in background caches.
 export async function fetchLaundryMeta() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error("Unauthorized");
 
+  // 1. Get User Profile to find Branch
   const { data: profile } = await supabase
     .from('profiles')
     .select('branch_id')
@@ -18,6 +22,7 @@ export async function fetchLaundryMeta() {
 
   if (!profile?.branch_id) throw new Error("No branch assigned");
 
+  // 2. Parallel Fetching for speed (approx 50-100ms)
   const [itemsRes, settingsRes, ratesRes, branchRes] = await Promise.all([
     supabase.from('laundry_items').select('*').eq('is_active', true).order('display_order'),
     supabase.from('laundry_settings').select('*').eq('branch_id', profile.branch_id).single(),
@@ -88,12 +93,9 @@ export async function submitOrder(data: CreateOrderInput, branchId: string) {
   return { success: true, orderId };
 }
 
-// --- CRITICAL FIX HERE ---
 export async function fetchOrderDetails(orderId: string) {
   const supabase = await createClient();
   
-  // We perform a JOIN on the customers table to ensure we get the name/phone/address
-  // even if the order table only stored the ID.
   const { data, error } = await supabase
     .from('orders')
     .select(`
@@ -110,8 +112,6 @@ export async function fetchOrderDetails(orderId: string) {
 
   if (error) return null;
 
-  // Flatten the data for the Receipt component
-  // This ensures 'customer_name' exists even if it's nested inside 'customers'
   return {
     ...data,
     customer_name: data.customers?.name || 'Unknown',
@@ -119,4 +119,52 @@ export async function fetchOrderDetails(orderId: string) {
     // Use the customer's address if the order doesn't have a specific delivery address override
     customer_address: data.customer_address || data.customers?.address || '' 
   };
+}
+
+// --- Handover Logic ---
+export async function processOrderHandover(orderId: string, paymentMethod: 'CASH' | 'UPI' = 'CASH') {
+  const supabase = await createClient();
+
+  // 1. Fetch current status
+  const { data: order, error: fetchError } = await supabase
+    .from('orders')
+    .select('payment_status, final_amount')
+    .eq('id', orderId)
+    .single();
+
+  if (fetchError || !order) return { error: "Order not found" };
+
+  let updates: any = {};
+  let message = "";
+
+  // 2. Apply Logic
+  if (order.payment_status === 'PAID') {
+    // Case A: Already Paid -> Just Deliver
+    updates = { 
+      status: 'DELIVERED', 
+      completed_at: new Date().toISOString() 
+    };
+    message = "Order marked as DELIVERED.";
+  } else {
+    // Case B: Unpaid -> Mark Paid & Delivered
+    updates = {
+      payment_status: 'PAID',
+      status: 'DELIVERED',
+      amount_paid: order.final_amount, 
+      payment_method: paymentMethod,   
+      completed_at: new Date().toISOString()
+    };
+    message = `Payment of ₹${order.final_amount} recorded & Order delivered.`;
+  }
+
+  // 3. Commit Update
+  const { error } = await supabase
+    .from('orders')
+    .update(updates)
+    .eq('id', orderId);
+
+  if (error) return { error: error.message };
+
+  revalidatePath('/');
+  return { success: true, message };
 }
