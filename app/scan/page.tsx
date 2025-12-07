@@ -1,10 +1,11 @@
+// File: app/scan/page.tsx
 'use client';
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { X, CheckCircle2, AlertCircle, Banknote, Truck, Loader2, Shirt, UserCheck, Calendar } from 'lucide-react';
-import { fetchOrderDetails } from '@/app/actions/order'; 
-import { deliverBill } from '../utils/billActions'; // Ensure this path matches your structure
+import { fetchOrderDetails } from '@/app/actions/order';
+import { deliverBill } from '../utils/billActions';
 import dynamic from 'next/dynamic';
 
 const Scanner = dynamic(
@@ -43,6 +44,8 @@ export default function ScanPage() {
       if (!parsed.id) throw new Error("Invalid QR Code");
 
       setProcessing(true); 
+      
+      // Fetch freshly revalidated data
       const order = await fetchOrderDetails(parsed.id);
       
       if (!order) {
@@ -53,7 +56,7 @@ export default function ScanPage() {
       }
       setProcessing(false);
     } catch (e) {
-      // Ignore invalid scans
+      // Ignore invalid JSON scans
     }
   };
 
@@ -61,20 +64,19 @@ export default function ScanPage() {
     if (!scannedData) return;
     setProcessing(true);
     
-    // Call the RPC function via our utility
     const result = await deliverBill(scannedData.id);
     
     if (result.success) {
       setSuccessMsg("Bill Closed & Delivered Successfully! ✅");
       
-      // Optimistic update to show closed state immediately
+      // Optimistic update
       setScannedData((prev: any) => ({
         ...prev,
         bill_status: 'CLOSED',
         payment_status: 'PAID',
+        status: 'DELIVERED', // Force status update
         is_open: false,
-        completed_at: new Date().toISOString(),
-        // Note: closed_by_name won't update until refresh, but UI handles fallback
+        completed_at: new Date().toISOString()
       }));
 
       setTimeout(() => router.push('/'), 2500); 
@@ -86,8 +88,13 @@ export default function ScanPage() {
 
   if (!mounted) return <div className="min-h-screen bg-black" />;
 
-  // 1. Critical Check: Is the bill already closed?
-  const isClosed = scannedData?.bill_status === 'CLOSED' || scannedData?.bill_status === 'ARCHIVED';
+  // --- ROBUST CLOSURE CHECK ---
+  // We check ALL flags. If ANY of these are true, we treat the bill as closed.
+  const isClosed = 
+    scannedData?.bill_status === 'CLOSED' || 
+    scannedData?.bill_status === 'ARCHIVED' || 
+    scannedData?.status === 'DELIVERED' ||
+    (scannedData?.payment_status === 'PAID' && !scannedData?.is_open);
 
   return (
     <div className="min-h-screen bg-black text-white flex flex-col relative">
@@ -131,14 +138,14 @@ export default function ScanPage() {
                       ? 'bg-gray-800 text-white' 
                       : (scannedData.payment_status === 'PAID' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700')
                   }`}>
-                    {isClosed ? scannedData.bill_status : scannedData.payment_status}
+                    {isClosed ? 'CLOSED' : scannedData.payment_status}
                   </span>
                 </div>
               </div>
 
-              {/* 2. Closed Status Indicator */}
+              {/* Closure Details */}
               {isClosed && (
-                <div className="mt-4 pt-3 border-t flex flex-col gap-2 text-xs bg-slate-50 p-3 rounded-xl border border-slate-200">
+                <div className="mt-4 pt-3 border-t border-slate-100 flex flex-col gap-2 text-xs bg-slate-50 p-3 rounded-xl border animate-in fade-in">
                    <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2 text-slate-500">
                          <UserCheck size={14} className="text-green-600" />
@@ -249,8 +256,6 @@ export default function ScanPage() {
               styles={{ container: { width: '100%', height: '100%' } }}
               components={{ finder: true }} 
             />
-            
-            {/* Guide Text */}
             <div className="absolute bottom-24 left-0 right-0 text-center pointer-events-none z-10 px-6">
               <p className="text-sm font-medium bg-black/60 text-white/90 inline-block px-6 py-3 rounded-full backdrop-blur-md border border-white/10 shadow-lg">
                 Scan Customer Bill QR
@@ -266,7 +271,6 @@ export default function ScanPage() {
           </div>
         )}
 
-        {/* Error Toast */}
         {error && (
           <div className="absolute top-20 left-4 right-4 bg-red-500 text-white p-4 rounded-2xl flex items-center gap-3 text-sm font-bold shadow-xl animate-in fade-in slide-in-from-top-4 z-50 border border-red-400">
             <AlertCircle size={20} className="shrink-0" /> {error}

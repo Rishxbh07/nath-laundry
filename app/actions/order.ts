@@ -5,7 +5,7 @@ import { createClient } from '@/app/utils/supabase/server'
 import { CreateOrderInput } from '@/app/lib/schemas/order'
 import { revalidatePath } from 'next/cache'
 
-// 1. Fetch Meta
+// 1. Fetch Meta (Standard Loading)
 export async function fetchLaundryMeta() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -46,7 +46,7 @@ export async function searchCustomer(phone: string) {
   return data;
 }
 
-// 2. Submit Order (UPDATED LOGIC)
+// 2. Submit Order (Uses your robust 'create_full_order' RPC)
 export async function submitOrder(data: CreateOrderInput, branchId: string) {
   const supabase = await createClient();
   
@@ -73,15 +73,14 @@ export async function submitOrder(data: CreateOrderInput, branchId: string) {
     payment_method: isPaidOnCreation ? data.payment_method : null,
     total_piece_count: data.total_item_count,
     
-    // --- NEW LOGIC START ---
-    created_by: user.id, // Always record creator
+    // Creator Tracking
+    created_by: user.id,
     
-    // If PAID on creation -> Close immediately
+    // If PAID on creation -> Close immediately logic
     closed_by: isPaidOnCreation ? user.id : null,
     completed_at: isPaidOnCreation ? new Date().toISOString() : null,
     bill_status: isPaidOnCreation ? 'CLOSED' : 'OPEN',
     status: isPaidOnCreation ? 'DELIVERED' : 'RECEIVED'
-    // --- NEW LOGIC END ---
   };
 
   const formattedItems = data.items.map(item => ({
@@ -90,6 +89,7 @@ export async function submitOrder(data: CreateOrderInput, branchId: string) {
     item_name_snapshot: item.item_name 
   }));
 
+  // Call the transactional RPC
   const { data: orderId, error } = await supabase.rpc('create_full_order', {
     p_branch_id: branchId,
     p_customer_phone: data.customer_phone,
@@ -104,11 +104,17 @@ export async function submitOrder(data: CreateOrderInput, branchId: string) {
     return { error: error.message };
   }
 
+  // Refresh home stats
   revalidatePath('/');
   return { success: true, orderId };
 }
 
+// 3. Fetch Details (CRITICAL FIX: Added cache busting)
 export async function fetchOrderDetails(orderId: string) {
+  // *** FIX: This forces Next.js to fetch fresh data, fixing the "stale" scan issue ***
+  revalidatePath('/scan'); 
+  revalidatePath('/'); // Optional: refresh home too while we are at it
+
   const supabase = await createClient();
   
   const { data, error } = await supabase
@@ -123,7 +129,7 @@ export async function fetchOrderDetails(orderId: string) {
 
   if (error || !data) return null;
 
-  // Fetch Names
+  // Fetch Names for Audit Trail
   let closedByName = null;
   if (data.closed_by) {
     const { data: closer } = await supabase.from('profiles').select('full_name').eq('user_id', data.closed_by).single();
@@ -146,46 +152,23 @@ export async function fetchOrderDetails(orderId: string) {
   };
 }
 
-// 3. Handover Logic (Scan Page)
-export async function processOrderHandover(orderId: string, paymentMethod: 'CASH' | 'UPI' = 'CASH') {
+// 4. Handover Logic (Updated to use Single Source of Truth RPC)
+export async function processOrderHandover(orderId: string) {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  
+  // Use the exact same RPC as the client-side to ensure consistency
+  const { data, error } = await supabase.rpc('mark_bill_as_delivered', { 
+    target_bill_id: orderId 
+  });
 
-  if (!user) return { error: "Unauthorized" };
-
-  const { data: order, error: fetchError } = await supabase
-    .from('orders')
-    .select('bill_status, final_amount')
-    .eq('id', orderId)
-    .single();
-
-  if (fetchError || !order) return { error: "Order not found" };
-
-  // Double Check Status
-  if (order.bill_status === 'CLOSED' || order.bill_status === 'ARCHIVED') {
-    return { success: true, message: "Order is already closed." };
+  if (error) {
+    console.error("Handover Error:", error);
+    return { error: error.message };
   }
 
-  // --- UPDATES ---
-  const updates = {
-    status: 'DELIVERED', 
-    payment_status: 'PAID', 
-    amount_paid: order.final_amount,
-    payment_method: paymentMethod,
-    
-    // Closure Details
-    completed_at: new Date().toISOString(),
-    closed_by: user.id, // Mark who confirmed delivery
-    bill_status: 'CLOSED' // Close the bill
-  };
-
-  const { error } = await supabase
-    .from('orders')
-    .update(updates)
-    .eq('id', orderId);
-
-  if (error) return { error: error.message };
-
+  // Refresh UI
   revalidatePath('/');
+  revalidatePath('/scan');
+  
   return { success: true, message: "Order Closed Successfully" };
 }
