@@ -1,11 +1,10 @@
-// File: app/scan/page.tsx
 'use client';
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { X, CheckCircle2, AlertCircle, Banknote, Truck, Loader2, Shirt, UserCheck, Calendar } from 'lucide-react';
-import { fetchOrderDetails } from '@/app/actions/order'; // We keep the fetch logic
-import { deliverBill } from '../utils/billActions';
+import { fetchOrderDetails } from '@/app/actions/order'; 
+import { deliverBill } from '../utils/billActions'; // Ensure this path matches your structure
 import dynamic from 'next/dynamic';
 
 const Scanner = dynamic(
@@ -44,7 +43,6 @@ export default function ScanPage() {
       if (!parsed.id) throw new Error("Invalid QR Code");
 
       setProcessing(true); 
-      // Fetching the order details to show the preview card
       const order = await fetchOrderDetails(parsed.id);
       
       if (!order) {
@@ -55,48 +53,46 @@ export default function ScanPage() {
       }
       setProcessing(false);
     } catch (e) {
-      // Ignore invalid JSON scans
+      // Ignore invalid scans
     }
   };
 
-  // --- THIS IS THE UPDATED FUNCTION ---
   const handleConfirm = async () => {
     if (!scannedData) return;
     setProcessing(true);
     
-    // We replace 'processOrderHandover' with our new 'deliverBill' function
-    // This calls the Supabase RPC, ensuring Created/Closed By and Dates are fixed.
+    // Call the RPC function via our utility
     const result = await deliverBill(scannedData.id);
     
     if (result.success) {
       setSuccessMsg("Bill Closed & Delivered Successfully! ✅");
       
-      // Update local state to show 'CLOSED' immediately without refreshing
+      // Optimistic update to show closed state immediately
       setScannedData((prev: any) => ({
         ...prev,
         bill_status: 'CLOSED',
         payment_status: 'PAID',
         is_open: false,
-        completed_at: new Date().toISOString()
+        completed_at: new Date().toISOString(),
+        // Note: closed_by_name won't update until refresh, but UI handles fallback
       }));
 
-      // Redirect after 2 seconds
-      setTimeout(() => router.push('/'), 2000); 
+      setTimeout(() => router.push('/'), 2500); 
     } else {
       setError(result.error || "Failed to update order");
       setProcessing(false);
     }
   };
-  // -------------------------------------
 
   if (!mounted) return <div className="min-h-screen bg-black" />;
 
-  // Logic to determine if closed
+  // 1. Critical Check: Is the bill already closed?
   const isClosed = scannedData?.bill_status === 'CLOSED' || scannedData?.bill_status === 'ARCHIVED';
 
   return (
     <div className="min-h-screen bg-black text-white flex flex-col relative">
       
+      {/* Top Bar */}
       <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-center z-20 bg-linear-to-b from-black/80 to-transparent">
         <h1 className="text-lg font-bold">Scan Bill QR</h1>
         <button onClick={() => router.back()} className="p-2 bg-white/10 rounded-full hover:bg-white/20 active:scale-95 transition-all">
@@ -116,10 +112,10 @@ export default function ScanPage() {
           </div>
         ) : scannedData ? (
           
-          /* BILL CARD */
+          /* --- ORDER DETAILS CARD --- */
           <div className="w-full h-full bg-slate-100 text-slate-800 flex flex-col animate-in slide-in-from-bottom duration-300 pt-16 rounded-t-3xl overflow-hidden shadow-2xl">
             
-            {/* Header */}
+            {/* Header Section */}
             <div className="bg-white p-6 rounded-b-3xl shadow-sm z-10 shrink-0 border-b border-slate-100">
               <div className="flex justify-between items-start mb-2">
                 <div>
@@ -130,7 +126,6 @@ export default function ScanPage() {
                 </div>
                 <div className="text-right">
                   <span className="block text-3xl font-bold text-blue-600">₹{scannedData.final_amount}</span>
-                  {/* Status Badge */}
                   <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full uppercase mt-1 inline-block ${
                     isClosed 
                       ? 'bg-gray-800 text-white' 
@@ -141,18 +136,18 @@ export default function ScanPage() {
                 </div>
               </div>
 
-              {/* Closure Details - Only show if CLOSED */}
+              {/* 2. Closed Status Indicator */}
               {isClosed && (
-                <div className="mt-4 pt-3 border-t border-slate-100 flex flex-col gap-2 text-xs bg-slate-50 p-3 rounded-xl">
+                <div className="mt-4 pt-3 border-t flex flex-col gap-2 text-xs bg-slate-50 p-3 rounded-xl border border-slate-200">
                    <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2 text-slate-500">
                          <UserCheck size={14} className="text-green-600" />
                          <span>Closed by:</span>
                       </div>
-                      {/* Note: If the backend hasn't refreshed, this might show 'Staff' until re-fetch */}
-                      <span className="font-bold text-slate-800">{scannedData.closed_by_name || 'Current User (You)'}</span>
+                      <span className="font-bold text-slate-800 uppercase">
+                        {scannedData.closed_by_name || 'Staff Member'}
+                      </span>
                    </div>
-                   
                    <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2 text-slate-500">
                          <Calendar size={14} className="text-blue-600" />
@@ -194,29 +189,32 @@ export default function ScanPage() {
               ))}
             </div>
 
-            {/* Footer Action */}
+            {/* 3. Action Footer (Conditional) */}
             <div className="p-5 bg-white border-t border-slate-200 shrink-0 pb-8 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-20">
+              
               {isClosed ? (
-                 /* CLOSED STATE - No Action */
-                 <div className="bg-gray-800 p-4 rounded-xl flex flex-col items-center justify-center gap-2 text-center text-white shadow-lg shadow-gray-300">
-                    <div className="flex items-center gap-2 font-bold text-lg">
-                       <CheckCircle2 size={24} className="text-green-400" /> Bill Closed
+                 /* CLOSED STATE: Show Info Card Only */
+                 <div className="bg-gray-800 p-4 rounded-2xl flex flex-col items-center justify-center gap-2 text-center text-white shadow-xl shadow-gray-400/20">
+                    <div className="flex items-center gap-2 font-bold text-lg text-green-400">
+                       <CheckCircle2 size={24} /> Bill is Closed
                     </div>
-                    <p className="text-gray-400 text-xs">Handover & Payment completed.</p>
+                    <p className="text-gray-400 text-xs px-4">
+                      This order has already been delivered and paid for. No further actions available.
+                    </p>
                     <button 
                       onClick={() => router.push('/')}
-                      className="mt-2 w-full py-3 bg-white/10 hover:bg-white/20 text-white font-bold rounded-xl transition-colors"
+                      className="mt-3 w-full py-3 bg-white/10 hover:bg-white/20 text-white font-bold rounded-xl transition-colors text-sm"
                     >
-                      Back to Home
+                      Return Home
                     </button>
                  </div>
               ) : (
-                 /* OPEN STATE - Action Buttons */
+                 /* OPEN STATE: Show Actions */
                  <>
                     <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 mb-4 flex items-center justify-center">
                         {scannedData.payment_status === 'PAID' ? (
                         <div className="flex items-center gap-2 text-green-700 font-bold text-sm">
-                            <Truck size={18} /> Ready for Delivery
+                            <Truck size={18} /> Ready for Handover
                         </div>
                         ) : (
                         <div className="flex items-center gap-2 text-blue-700 font-bold text-sm">
@@ -235,7 +233,7 @@ export default function ScanPage() {
                         }`}
                     >
                         {processing ? <Loader2 className="animate-spin" /> : (
-                        scannedData.payment_status === 'PAID' ? 'Confirm Handover' : 'Confirm Payment & Handover'
+                        scannedData.payment_status === 'PAID' ? 'Confirm Delivery' : 'Confirm Pay & Deliver'
                         )}
                     </button>
                  </>
@@ -244,29 +242,31 @@ export default function ScanPage() {
           </div>
 
         ) : (
-          
-          /* CAMERA VIEW */
+          /* --- SCANNER VIEW --- */
           <div className="w-full h-full absolute inset-0 bg-black">
             <Scanner 
               onScan={handleScan}
               styles={{ container: { width: '100%', height: '100%' } }}
               components={{ finder: true }} 
             />
-            <div className="absolute bottom-12 left-0 right-0 text-center pointer-events-none z-10 px-6">
-              <p className="text-sm font-medium bg-black/60 text-white inline-block px-6 py-3 rounded-full backdrop-blur-md border border-white/10 shadow-lg">
-                Align QR code within the frame
+            
+            {/* Guide Text */}
+            <div className="absolute bottom-24 left-0 right-0 text-center pointer-events-none z-10 px-6">
+              <p className="text-sm font-medium bg-black/60 text-white/90 inline-block px-6 py-3 rounded-full backdrop-blur-md border border-white/10 shadow-lg">
+                Scan Customer Bill QR
               </p>
             </div>
             
             {processing && !scannedData && (
-               <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm z-20 flex-col gap-3">
+               <div className="absolute inset-0 flex items-center justify-center bg-black/80 backdrop-blur-sm z-20 flex-col gap-3">
                   <Loader2 className="animate-spin text-white" size={48} />
-                  <p className="text-white font-bold text-sm tracking-widest uppercase">Fetching Details...</p>
+                  <p className="text-white font-bold text-sm tracking-widest uppercase">Verifying...</p>
                </div>
             )}
           </div>
         )}
 
+        {/* Error Toast */}
         {error && (
           <div className="absolute top-20 left-4 right-4 bg-red-500 text-white p-4 rounded-2xl flex items-center gap-3 text-sm font-bold shadow-xl animate-in fade-in slide-in-from-top-4 z-50 border border-red-400">
             <AlertCircle size={20} className="shrink-0" /> {error}

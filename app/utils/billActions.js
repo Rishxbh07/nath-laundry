@@ -1,9 +1,10 @@
-import { createClient } from '@/utils/supabase/client'; // Make sure this path matches your project structure
+// File: app/utils/billActions.js
+import { createClient } from '@/app/utils/supabase/client'; // <--- FIXED PATH
 
 /**
  * Marks a bill as delivered, paid, and closed.
  * Uses the 'mark_bill_as_delivered' RPC function in Supabase.
- * * @param {string} billId - The UUID of the bill to close.
+ * @param {string} billId - The UUID of the bill to close.
  * @returns {Promise<{success: boolean, data: any, error: any}>}
  */
 export const deliverBill = async (billId) => {
