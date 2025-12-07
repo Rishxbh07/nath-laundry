@@ -4,7 +4,8 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { X, CheckCircle2, AlertCircle, Banknote, Truck, Loader2, Shirt, UserCheck, Calendar } from 'lucide-react';
-import { fetchOrderDetails, processOrderHandover } from '@/app/actions/order';
+import { fetchOrderDetails } from '@/app/actions/order'; // We keep the fetch logic
+import { deliverBill } from '../utils/billActions';
 import dynamic from 'next/dynamic';
 
 const Scanner = dynamic(
@@ -43,6 +44,7 @@ export default function ScanPage() {
       if (!parsed.id) throw new Error("Invalid QR Code");
 
       setProcessing(true); 
+      // Fetching the order details to show the preview card
       const order = await fetchOrderDetails(parsed.id);
       
       if (!order) {
@@ -53,30 +55,43 @@ export default function ScanPage() {
       }
       setProcessing(false);
     } catch (e) {
-      // Ignore
+      // Ignore invalid JSON scans
     }
   };
 
+  // --- THIS IS THE UPDATED FUNCTION ---
   const handleConfirm = async () => {
     if (!scannedData) return;
     setProcessing(true);
     
-    // We default to CASH, but you can add a selector in UI if needed
-    const result = await processOrderHandover(scannedData.id, 'CASH');
+    // We replace 'processOrderHandover' with our new 'deliverBill' function
+    // This calls the Supabase RPC, ensuring Created/Closed By and Dates are fixed.
+    const result = await deliverBill(scannedData.id);
     
     if (result.success) {
-      setSuccessMsg(result.message || "Done");
+      setSuccessMsg("Bill Closed & Delivered Successfully! ✅");
+      
+      // Update local state to show 'CLOSED' immediately without refreshing
+      setScannedData((prev: any) => ({
+        ...prev,
+        bill_status: 'CLOSED',
+        payment_status: 'PAID',
+        is_open: false,
+        completed_at: new Date().toISOString()
+      }));
+
+      // Redirect after 2 seconds
       setTimeout(() => router.push('/'), 2000); 
     } else {
       setError(result.error || "Failed to update order");
       setProcessing(false);
     }
   };
+  // -------------------------------------
 
   if (!mounted) return <div className="min-h-screen bg-black" />;
 
-  // --- LOGIC TO DETERMINE IF CLOSED ---
-  // The Solid Fix: Check the immutable enum status
+  // Logic to determine if closed
   const isClosed = scannedData?.bill_status === 'CLOSED' || scannedData?.bill_status === 'ARCHIVED';
 
   return (
@@ -134,7 +149,8 @@ export default function ScanPage() {
                          <UserCheck size={14} className="text-green-600" />
                          <span>Closed by:</span>
                       </div>
-                      <span className="font-bold text-slate-800">{scannedData.closed_by_name || 'Staff'}</span>
+                      {/* Note: If the backend hasn't refreshed, this might show 'Staff' until re-fetch */}
+                      <span className="font-bold text-slate-800">{scannedData.closed_by_name || 'Current User (You)'}</span>
                    </div>
                    
                    <div className="flex items-center justify-between">
@@ -143,7 +159,7 @@ export default function ScanPage() {
                          <span>Closed on:</span>
                       </div>
                       <span className="font-bold text-slate-800">
-                        {scannedData.completed_at ? new Date(scannedData.completed_at).toLocaleString() : '---'}
+                        {scannedData.completed_at ? new Date(scannedData.completed_at).toLocaleString() : 'Just now'}
                       </span>
                    </div>
                 </div>
