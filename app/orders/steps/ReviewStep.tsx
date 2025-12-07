@@ -9,16 +9,15 @@ import Receipt from '@/app/components/Receipt';
 
 interface ReviewStepProps {
   form: UseFormReturn<CreateOrderInput>;
-  branchData: any; // Receive branch info for the receipt
+  branchData: any;
+  staffName?: string; // New Prop Fix
 }
 
-export default function ReviewStep({ form, branchData }: ReviewStepProps) {
+export default function ReviewStep({ form, branchData, staffName }: ReviewStepProps) {
   const { register, watch, setValue, formState: { errors } } = form;
   
-  // Watch all fields needed to construct the preview
   const formData = watch();
 
-  // Construct a "Draft Order" object that mimics the DB structure
   const draftOrder = useMemo(() => {
     const totalAmount = formData.items?.reduce((sum, i) => sum + i.total_price, 0) || 0;
     const finalAmount = Math.max(0, totalAmount - (formData.discount_amount || 0));
@@ -27,10 +26,9 @@ export default function ReviewStep({ form, branchData }: ReviewStepProps) {
       ...formData,
       total_amount: totalAmount,
       final_amount: finalAmount,
-      // Use form data directly
       customer_name: formData.customer_name || 'Walk-in Customer', 
       customer_phone: formData.customer_phone || '---',
-      created_at: new Date().toISOString(), // Current time for preview
+      created_at: new Date().toISOString(), 
       readable_bill_id: 'PREVIEW',
     };
   }, [formData]);
@@ -38,14 +36,13 @@ export default function ReviewStep({ form, branchData }: ReviewStepProps) {
   return (
     <div className="space-y-6 pb-20">
       
-      {/* 1. Payment Controls (Discount & Status) */}
+      {/* 1. Payment Controls */}
       <div className="bg-white p-4 rounded-3xl shadow-sm border border-slate-100 space-y-4">
         <h3 className="text-sm font-bold text-slate-700 flex items-center gap-2">
           <Wallet size={18} className="text-blue-600" /> Payment Details
         </h3>
         
         <div className="grid grid-cols-2 gap-4">
-           {/* Discount Input */}
            <div>
              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Discount (₹)</label>
              <input 
@@ -56,7 +53,6 @@ export default function ReviewStep({ form, branchData }: ReviewStepProps) {
              />
            </div>
 
-           {/* Manual Count (Verification) */}
            <div>
              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Total Pcs</label>
              <input 
@@ -68,7 +64,6 @@ export default function ReviewStep({ form, branchData }: ReviewStepProps) {
            </div>
         </div>
 
-        {/* Payment Status Toggle */}
         <div>
           <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-2">Payment Status</label>
           <div className="flex bg-slate-100 p-1 rounded-xl">
@@ -89,7 +84,6 @@ export default function ReviewStep({ form, branchData }: ReviewStepProps) {
           </div>
         </div>
 
-        {/* Payment Method (Conditional) */}
         {(formData.payment_status === 'PAID' || formData.payment_status === 'PARTIAL') && (
           <div className="grid grid-cols-3 gap-2 animate-in fade-in slide-in-from-top-2">
              {['CASH', 'UPI', 'OTHER'].map(method => (
@@ -114,12 +108,12 @@ export default function ReviewStep({ form, branchData }: ReviewStepProps) {
            </span>
         </div>
         
-        {/* Render the Receipt in "Preview" mode */}
         <div className="border-4 border-slate-200 rounded-xl overflow-hidden bg-gray-50/50 p-2">
            <Receipt 
              order={draftOrder} 
              branch={branchData} 
              isPreview={true} 
+             staffName={staffName} // Passed here
            />
         </div>
       </div>

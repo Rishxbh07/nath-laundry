@@ -22,6 +22,7 @@ export default async function NewOrderPage() {
           settings={meta.settings}
           specialRates={meta.specialRates}
           branchData={meta.branch} 
+          staffName={meta.user_name} // Pass the user name here
         />
       </div>
     </main>

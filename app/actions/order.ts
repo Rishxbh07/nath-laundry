@@ -5,24 +5,20 @@ import { createClient } from '@/app/utils/supabase/server'
 import { CreateOrderInput } from '@/app/lib/schemas/order'
 import { revalidatePath } from 'next/cache'
 
-// --- STANDARD FETCH (No unstable_cache) ---
-// We fetch data directly to ensure the correct user session is used for RLS policies.
-// This prevents the "logout loop" issue caused by missing auth contexts in background caches.
+// 1. Fetch Meta
 export async function fetchLaundryMeta() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error("Unauthorized");
 
-  // 1. Get User Profile to find Branch
   const { data: profile } = await supabase
     .from('profiles')
-    .select('branch_id')
+    .select('branch_id, full_name')
     .eq('user_id', user.id)
     .single();
 
   if (!profile?.branch_id) throw new Error("No branch assigned");
 
-  // 2. Parallel Fetching for speed (approx 50-100ms)
   const [itemsRes, settingsRes, ratesRes, branchRes] = await Promise.all([
     supabase.from('laundry_items').select('*').eq('is_active', true).order('display_order'),
     supabase.from('laundry_settings').select('*').eq('branch_id', profile.branch_id).single(),
@@ -32,6 +28,7 @@ export async function fetchLaundryMeta() {
 
   return {
     branch_id: profile.branch_id,
+    user_name: profile.full_name || 'Staff Member', 
     items: itemsRes.data || [],
     settings: settingsRes.data || null,
     specialRates: ratesRes.data || [],
@@ -49,8 +46,13 @@ export async function searchCustomer(phone: string) {
   return data;
 }
 
+// 2. Submit Order (UPDATED LOGIC)
 export async function submitOrder(data: CreateOrderInput, branchId: string) {
   const supabase = await createClient();
+  
+  // 1. Strict Auth Check
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "User authentication failed. Please log in again." };
 
   const totalAmount = data.items.reduce((sum, item) => sum + item.total_price, 0);
   const finalAmount = totalAmount - (data.discount_amount || 0);
@@ -58,6 +60,9 @@ export async function submitOrder(data: CreateOrderInput, branchId: string) {
   const combinedDateTime = `${data.due_date}T${data.due_time}:00`; 
   const finalDueDate = new Date(combinedDateTime).toISOString();
 
+  // 2. Determine Initial Status based on Payment
+  const isPaidOnCreation = data.payment_status === 'PAID';
+  
   const orderPayload = {
     delivery_mode: data.delivery_mode,
     due_date: finalDueDate, 
@@ -65,8 +70,18 @@ export async function submitOrder(data: CreateOrderInput, branchId: string) {
     total_amount: totalAmount,
     final_amount: finalAmount < 0 ? 0 : finalAmount,
     payment_status: data.payment_status,
-    payment_method: data.payment_status === 'PAID' ? data.payment_method : null,
-    total_piece_count: data.total_item_count 
+    payment_method: isPaidOnCreation ? data.payment_method : null,
+    total_piece_count: data.total_item_count,
+    
+    // --- NEW LOGIC START ---
+    created_by: user.id, // Always record creator
+    
+    // If PAID on creation -> Close immediately
+    closed_by: isPaidOnCreation ? user.id : null,
+    completed_at: isPaidOnCreation ? new Date().toISOString() : null,
+    bill_status: isPaidOnCreation ? 'CLOSED' : 'OPEN',
+    status: isPaidOnCreation ? 'DELIVERED' : 'RECEIVED'
+    // --- NEW LOGIC END ---
   };
 
   const formattedItems = data.items.map(item => ({
@@ -101,63 +116,69 @@ export async function fetchOrderDetails(orderId: string) {
     .select(`
       *,
       order_items (*),
-      customers (
-        name,
-        phone,
-        address
-      )
+      customers (name, phone, address)
     `)
     .eq('id', orderId)
     .single();
 
-  if (error) return null;
+  if (error || !data) return null;
+
+  // Fetch Names
+  let closedByName = null;
+  if (data.closed_by) {
+    const { data: closer } = await supabase.from('profiles').select('full_name').eq('user_id', data.closed_by).single();
+    closedByName = closer?.full_name;
+  }
+
+  let createdByName = null;
+  if (data.created_by) {
+    const { data: creator } = await supabase.from('profiles').select('full_name').eq('user_id', data.created_by).single();
+    createdByName = creator?.full_name;
+  }
 
   return {
     ...data,
     customer_name: data.customers?.name || 'Unknown',
     customer_phone: data.customers?.phone || 'Unknown',
-    // Use the customer's address if the order doesn't have a specific delivery address override
-    customer_address: data.customer_address || data.customers?.address || '' 
+    customer_address: data.customer_address || data.customers?.address || '',
+    closed_by_name: closedByName,
+    created_by_name: createdByName
   };
 }
 
-// --- Handover Logic ---
+// 3. Handover Logic (Scan Page)
 export async function processOrderHandover(orderId: string, paymentMethod: 'CASH' | 'UPI' = 'CASH') {
   const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
 
-  // 1. Fetch current status
+  if (!user) return { error: "Unauthorized" };
+
   const { data: order, error: fetchError } = await supabase
     .from('orders')
-    .select('payment_status, final_amount')
+    .select('bill_status, final_amount')
     .eq('id', orderId)
     .single();
 
   if (fetchError || !order) return { error: "Order not found" };
 
-  let updates: any = {};
-  let message = "";
-
-  // 2. Apply Logic
-  if (order.payment_status === 'PAID') {
-    // Case A: Already Paid -> Just Deliver
-    updates = { 
-      status: 'DELIVERED', 
-      completed_at: new Date().toISOString() 
-    };
-    message = "Order marked as DELIVERED.";
-  } else {
-    // Case B: Unpaid -> Mark Paid & Delivered
-    updates = {
-      payment_status: 'PAID',
-      status: 'DELIVERED',
-      amount_paid: order.final_amount, 
-      payment_method: paymentMethod,   
-      completed_at: new Date().toISOString()
-    };
-    message = `Payment of ₹${order.final_amount} recorded & Order delivered.`;
+  // Double Check Status
+  if (order.bill_status === 'CLOSED' || order.bill_status === 'ARCHIVED') {
+    return { success: true, message: "Order is already closed." };
   }
 
-  // 3. Commit Update
+  // --- UPDATES ---
+  const updates = {
+    status: 'DELIVERED', 
+    payment_status: 'PAID', 
+    amount_paid: order.final_amount,
+    payment_method: paymentMethod,
+    
+    // Closure Details
+    completed_at: new Date().toISOString(),
+    closed_by: user.id, // Mark who confirmed delivery
+    bill_status: 'CLOSED' // Close the bill
+  };
+
   const { error } = await supabase
     .from('orders')
     .update(updates)
@@ -166,5 +187,5 @@ export async function processOrderHandover(orderId: string, paymentMethod: 'CASH
   if (error) return { error: error.message };
 
   revalidatePath('/');
-  return { success: true, message };
+  return { success: true, message: "Order Closed Successfully" };
 }

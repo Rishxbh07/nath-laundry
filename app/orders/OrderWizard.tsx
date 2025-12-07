@@ -13,13 +13,10 @@ import { toBlob, toPng } from 'html-to-image';
 import Receipt from '@/app/components/Receipt';
 import dynamic from 'next/dynamic';
 
-// Import Steps
 import CustomerStep from './steps/CustomerStep';
 import ItemsStep from './steps/ItemStep';
 import DeliveryStep from './steps/DeliveryStep';
 
-// --- OPTIMIZATION: Lazy Load the Heavy Review Step ---
-// This prevents loading html-to-image and print libraries until the user reaches the end.
 const ReviewStep = dynamic(() => import('./steps/ReviewStep'), {
   loading: () => (
     <div className="flex flex-col items-center justify-center h-64 text-slate-400">
@@ -27,7 +24,7 @@ const ReviewStep = dynamic(() => import('./steps/ReviewStep'), {
       <p className="text-xs font-bold uppercase tracking-widest">Preparing Billing Engine...</p>
     </div>
   ),
-  ssr: false // Browser-only APIs used in Review
+  ssr: false 
 });
 
 interface OrderWizardProps {
@@ -36,6 +33,7 @@ interface OrderWizardProps {
   settings: any;
   specialRates?: any[];
   branchData?: any;
+  staffName?: string; // Corrected Interface
 }
 
 const STEPS = [
@@ -50,23 +48,21 @@ export default function OrderWizard({
   items: dbItems, 
   settings, 
   specialRates = [], 
-  branchData 
+  branchData,
+  staffName
 }: OrderWizardProps) {
   const [currentStep, setCurrentStep] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderSuccess, setOrderSuccess] = useState<any>(null);
   const router = useRouter();
 
-  // --- Refs ---
   const receiptRef = useRef<HTMLDivElement>(null); 
   const captureRef = useRef<HTMLDivElement>(null); 
 
-  // --- Print Handler ---
   const handlePrint = useReactToPrint({
     contentRef: receiptRef,
   });
 
-  // --- WhatsApp Handler ---
   const handleWhatsAppShare = async () => {
     if (!orderSuccess || !captureRef.current) return;
 
@@ -172,7 +168,6 @@ export default function OrderWizard({
       <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center p-4">
         <div className="bg-white rounded-3xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[95vh]">
           
-          {/* Header */}
           <div className="bg-green-50 p-6 flex flex-col items-center border-b border-green-100 shrink-0">
              <div className="h-14 w-14 bg-green-100 rounded-full flex items-center justify-center text-green-600 mb-3">
                 <Check size={32} strokeWidth={3} />
@@ -181,15 +176,15 @@ export default function OrderWizard({
              <p className="text-sm text-slate-500">Bill #: {orderSuccess.readable_bill_id}</p>
           </div>
 
-          {/* Scrollable Preview Area */}
           <div className="flex-1 overflow-y-auto p-4 bg-slate-50/50 flex flex-col items-center">
              
-             {/* 1. Visible Receipt for User to Check */}
+             {/* 1. Visible Receipt */}
              <div className="shadow-lg transform scale-95 origin-top pointer-events-none">
                 <Receipt 
                   ref={receiptRef} 
                   order={orderSuccess} 
-                  branch={branchData} 
+                  branch={branchData}
+                  staffName={staffName} // Pass name
                 />
              </div>
 
@@ -199,11 +194,11 @@ export default function OrderWizard({
                   ref={captureRef} 
                   order={orderSuccess} 
                   branch={branchData} 
+                  staffName={staffName} // Pass name
                 />
              </div>
           </div>
 
-          {/* Action Footer */}
           <div className="p-4 border-t border-slate-100 bg-white grid grid-cols-2 gap-3 shrink-0">
              <button 
                 onClick={handleWhatsAppShare}
@@ -296,7 +291,7 @@ export default function OrderWizard({
            />
         )}
         {currentStep === 2 && <DeliveryStep form={form} />}
-        {currentStep === 3 && <ReviewStep form={form} branchData={branchData} />}
+        {currentStep === 3 && <ReviewStep form={form} branchData={branchData} staffName={staffName} />}
       </div>
 
       {/* 3. Footer Actions */}
