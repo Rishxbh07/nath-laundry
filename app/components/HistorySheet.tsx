@@ -1,9 +1,10 @@
 // File: app/components/HistorySheet.tsx
 'use client';
 
-import React, { useState } from 'react';
-import { History, X, ChevronRight, Clock, FileText } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { History, X, ChevronRight, Clock, FileText, MoreVertical, Edit } from 'lucide-react';
 import { fetchRecentOrders, HistoryItem } from '@/app/actions/history';
+import { useRouter } from 'next/navigation';
 
 interface HistorySheetProps {
   branchId: string;
@@ -13,6 +14,8 @@ export default function HistorySheet({ branchId }: HistorySheetProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [orders, setOrders] = useState<HistoryItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [activeMenuId, setActiveMenuId] = useState<string | null>(null); 
+  const router = useRouter();
 
   const handleOpen = async () => {
     setIsOpen(true);
@@ -21,6 +24,22 @@ export default function HistorySheet({ branchId }: HistorySheetProps) {
     setOrders(data);
     setLoading(false);
   };
+
+  const handleClose = () => {
+    setIsOpen(false);
+  };
+
+  // --- FAST VISIBILITY TOGGLE ---
+  // When sheet opens, add class to body to hide BottomNav via CSS
+  useEffect(() => {
+    if (isOpen) {
+      document.body.classList.add('sheet-open');
+    } else {
+      document.body.classList.remove('sheet-open');
+    }
+    // Cleanup on unmount
+    return () => document.body.classList.remove('sheet-open');
+  }, [isOpen]);
 
   return (
     <>
@@ -43,11 +62,11 @@ export default function HistorySheet({ branchId }: HistorySheetProps) {
 
       {/* 2. Slide-up Sheet / Modal */}
       {isOpen && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+        <div className="fixed inset-0 z-100 flex items-end sm:items-center justify-center">
           {/* Backdrop */}
           <div 
             className="absolute inset-0 bg-black/30 backdrop-blur-sm animate-in fade-in duration-200"
-            onClick={() => setIsOpen(false)}
+            onClick={handleClose}
           />
 
           {/* Sheet Content */}
@@ -60,7 +79,7 @@ export default function HistorySheet({ branchId }: HistorySheetProps) {
                 <p className="text-xs text-slate-400">Last 10 generated bills</p>
               </div>
               <button 
-                onClick={() => setIsOpen(false)}
+                onClick={handleClose}
                 className="h-8 w-8 bg-slate-100 rounded-full flex items-center justify-center text-slate-500 hover:bg-slate-200"
               >
                 <X size={18} />
@@ -68,7 +87,7 @@ export default function HistorySheet({ branchId }: HistorySheetProps) {
             </div>
 
             {/* List Area */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            <div className="flex-1 overflow-y-auto p-4 space-y-3 pb-10">
               {loading ? (
                 <div className="flex flex-col items-center justify-center py-12 text-slate-400 gap-2">
                   <div className="animate-spin h-6 w-6 border-2 border-current border-t-transparent rounded-full" />
@@ -80,9 +99,9 @@ export default function HistorySheet({ branchId }: HistorySheetProps) {
                 </div>
               ) : (
                 orders.map((item) => (
-                  <div key={item.id} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-col gap-2">
+                  <div key={item.id} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-col gap-2 relative">
                     
-                    {/* Top Row: ID & Status */}
+                    {/* Top Row: ID & Status & Menu */}
                     <div className="flex justify-between items-start">
                       <div className="flex items-center gap-2">
                         <div className="p-1.5 bg-slate-100 rounded-lg text-slate-500">
@@ -92,14 +111,35 @@ export default function HistorySheet({ branchId }: HistorySheetProps) {
                           {item.billId}
                         </span>
                       </div>
-                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wide ${
-                        item.payment_status === 'PAID' 
-                          ? 'bg-green-100 text-green-700' 
-                          : 'bg-yellow-100 text-yellow-700'
-                      }`}>
-                        {item.payment_status}
-                      </span>
+                      
+                      <div className="flex items-center gap-2">
+                         <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wide ${
+                            item.payment_status === 'PAID' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
+                         }`}>
+                            {item.payment_status}
+                         </span>
+
+                         {/* 3-Dot Menu Trigger */}
+                         <button 
+                           onClick={() => setActiveMenuId(activeMenuId === item.id ? null : item.id)}
+                           className="p-1 hover:bg-slate-100 rounded-full text-slate-400"
+                         >
+                           <MoreVertical size={16} />
+                         </button>
+                      </div>
                     </div>
+
+                    {/* Dropdown Menu */}
+                    {activeMenuId === item.id && (
+                      <div className="absolute right-4 top-10 z-20 bg-white shadow-xl border border-slate-100 rounded-xl overflow-hidden animate-in zoom-in-95 duration-200">
+                         <button 
+                           onClick={() => router.push(`/orders/edit/${item.id}`)}
+                           className="flex items-center gap-2 px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-50 w-full text-left"
+                         >
+                           <Edit size={14} className="text-blue-500" /> Edit Order
+                         </button>
+                      </div>
+                    )}
 
                     {/* Middle Row: Customer Details */}
                     <div className="flex justify-between items-end border-t border-slate-50 pt-2 mt-1">

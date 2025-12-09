@@ -9,7 +9,7 @@ import { useOrderCalculator } from './items/useOrderCalculator';
 import BulkHeader from './items/BulkHeader';
 import ItemSelector from './items/ItemSelector';
 import ItemConfigSheet from './items/ItemConfigSheet';
-import CustomItemSheet from './items/CustomItemSheet'; // Import New Component
+import CustomItemSheet from './items/CustomItemSheet'; 
 import ManifestList from './items/ManifestList';
 
 interface ItemsStepProps {
@@ -17,14 +17,39 @@ interface ItemsStepProps {
   dbItems: any[];
   settings: any;
   specialRates: any[];
+  initialItems?: any[]; // New Prop
 }
 
-export default function ItemsStep({ form, dbItems, settings, specialRates }: ItemsStepProps) {
+export default function ItemsStep({ form, dbItems, settings, specialRates, initialItems }: ItemsStepProps) {
+  // Initialize bulk weight from form (which might have initial data)
   const [bulkWeight, setBulkWeight] = useState<number>(form.watch('bulk_weight') || 0);
   const [bulkService, setBulkService] = useState<'Wash & Fold' | 'Wash & Iron'>('Wash & Fold');
-  const [manifest, setManifest] = useState<any[]>([]);
+  
+  // Initialize Manifest from Initial Items
+  const [manifest, setManifest] = useState<any[]>(() => {
+    if (!initialItems) return [];
+    
+    // We need to reconstruct the "manifest" structure from the flat items list
+    // Filter out the auto-generated Base Charge, as the calculator re-adds it
+    const manualItems = initialItems.filter(i => !i.is_base_charge);
+    
+    return manualItems.map(i => ({
+      item: { 
+        id: i.item_id || 'manual', 
+        name: i.item_name, 
+        // Try to find original category/unit if possible, else default
+        default_unit: i.weight > 0 ? 'KG' : 'PIECE', 
+        kind: i.item_id ? 'STANDARD' : 'MANUAL' 
+      },
+      quantity: i.quantity,
+      weight: i.weight,
+      service_type: i.service_type,
+      manual_rate: i.item_id ? undefined : i.unit_price // Preserve manual rates
+    }));
+  });
+
   const [activeItem, setActiveItem] = useState<any | null>(null);
-  const [showCustomSheet, setShowCustomSheet] = useState(false); // New State
+  const [showCustomSheet, setShowCustomSheet] = useState(false); 
 
   useOrderCalculator({
     form,
@@ -69,7 +94,7 @@ export default function ItemsStep({ form, dbItems, settings, specialRates }: Ite
       <ItemSelector 
         items={dbItems} 
         onSelect={setActiveItem}
-        onCustomClick={() => setShowCustomSheet(true)} // Hooked up
+        onCustomClick={() => setShowCustomSheet(true)} 
       />
 
       <ManifestList 

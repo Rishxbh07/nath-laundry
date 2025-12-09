@@ -4,8 +4,11 @@ import React, { useState, useRef } from 'react';
 import { useForm, SubmitHandler } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { createOrderSchema, CreateOrderInput } from '@/app/lib/schemas/order';
-import { submitOrder, fetchOrderDetails } from '@/app/actions/order';
-import { ChevronRight, ChevronLeft, Check, X, User, Shirt, Truck, IndianRupee, Printer, Home, Send, Loader2, Copy } from 'lucide-react';
+import { submitOrder, fetchOrderDetails, updateOrder } from '@/app/actions/order'; 
+import { 
+  ChevronRight, ChevronLeft, Check, X, User, Shirt, Truck, 
+  IndianRupee, Printer, Home, Send, Loader2, Link2 
+} from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useReactToPrint } from 'react-to-print';
 import { toBlob } from 'html-to-image'; 
@@ -26,6 +29,7 @@ const ReviewStep = dynamic(() => import('./steps/ReviewStep'), {
   ssr: false 
 });
 
+// IMPORTANT: Updated Interface
 interface OrderWizardProps {
   branchId: string;
   items: any[];
@@ -33,6 +37,8 @@ interface OrderWizardProps {
   specialRates?: any[];
   branchData?: any;
   staffName?: string;
+  initialOrder?: any; // Required for edit
+  isEditing?: boolean; // Required for edit
 }
 
 const STEPS = [
@@ -48,7 +54,9 @@ export default function OrderWizard({
   settings, 
   specialRates = [], 
   branchData,
-  staffName
+  staffName,
+  initialOrder, 
+  isEditing = false
 }: OrderWizardProps) {
   const [currentStep, setCurrentStep] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -63,13 +71,35 @@ export default function OrderWizard({
     contentRef: receiptRef,
   });
 
-  // --- UNIVERSAL "COPY & CHAT" LOGIC ---
+  // --- HELPER: Count Rows for Smart Switch ---
+  const calculateBillRows = (order: any) => {
+    if (!order) return 0;
+    
+    const items = order.order_items || [];
+    const hasBulkPile = items.some((i: any) => i.item_name_snapshot?.startsWith('Bulk Pile') || i.item_name?.startsWith('Bulk Pile'));
+    const pileContentCount = items.filter((i: any) => 
+      !i.item_name_snapshot?.startsWith('Bulk Pile') && 
+      !i.item_name?.startsWith('Bulk Pile') &&
+      (i.service_type === 'Wash & Fold' || i.service_type === 'Wash & Iron') &&
+      (Number(i.total_price) === 0)
+    ).length;
+    const addOnCount = items.filter((i: any) => 
+      !i.item_name_snapshot?.startsWith('Bulk Pile') && 
+      !i.item_name?.startsWith('Bulk Pile') &&
+      !(
+        (i.service_type === 'Wash & Fold' || i.service_type === 'Wash & Iron') &&
+        (Number(i.total_price) === 0)
+      )
+    ).length;
+
+    return (hasBulkPile ? 1 : 0) + pileContentCount + addOnCount;
+  };
+
   const handleWhatsAppShare = async () => {
     if (!orderSuccess || !captureRef.current) return;
     setIsCopying(true);
 
     try {
-      // 1. Get Phone Number
       let rawPhone = orderSuccess.customer_phone;
       if (!rawPhone || rawPhone === 'Unknown') {
          const cust = orderSuccess.customers;
@@ -85,39 +115,42 @@ export default function OrderWizard({
       }
       if (phone.length === 10) phone = '91' + phone; 
 
-      // 2. Generate Image Blob
-      const blob = await toBlob(captureRef.current, { backgroundColor: '#ffffff', pixelRatio: 3 });
-      if (!blob) throw new Error("Failed to generate image");
+      const rowCount = calculateBillRows(orderSuccess);
+      const IS_LARGE_BILL = rowCount > 13;
 
-      // 3. COPY TO CLIPBOARD (Works on Mobile & PC)
-      try {
-        const data = [new ClipboardItem({ 'image/png': blob })];
-        await navigator.clipboard.write(data);
-        
-        // Success Toast/Alert
-        // We use a short timeout to ensure the user sees this before the tab switch
-        setTimeout(() => {
-           alert("✅ Bill Copied!\n\n1. WhatsApp is opening...\n2. Long Press > Paste in the chat.");
-        }, 300);
-
-      } catch (clipboardErr) {
-        console.error("Clipboard failed:", clipboardErr);
-        // Fallback: If clipboard fails (rare on modern devices), we default to download
-        const link = document.createElement('a');
-        link.download = `Bill-${orderSuccess.readable_bill_id}.png`;
-        link.href = URL.createObjectURL(blob);
-        link.click();
-        alert("⚠️ Clipboard blocked. Bill downloaded instead.");
-      }
-
-      // 4. OPEN WHATSAPP (Direct Chat - No Contact Save Needed)
-      const message = `Hello ${orderSuccess.customer_name}, here is your bill receipt.`;
-      const waUrl = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+      let message = "";
       
-      // Delay slightly to allow the clipboard write to finish cleanly
-      setTimeout(() => {
+      if (IS_LARGE_BILL) {
+        const origin = window.location.origin;
+        const billLink = `${origin}/bill/${orderSuccess.id}`;
+        message = `Hello ${orderSuccess.customer_name}, here is your bill link: ${billLink}`;
+        const waUrl = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
         window.open(waUrl, '_blank');
-      }, 500);
+      } else {
+        const blob = await toBlob(captureRef.current, { backgroundColor: '#ffffff', pixelRatio: 3 });
+        if (!blob) throw new Error("Failed to generate image");
+
+        try {
+          const data = [new ClipboardItem({ 'image/png': blob })];
+          await navigator.clipboard.write(data);
+          setTimeout(() => {
+             alert("✅ Bill Copied!\n\n1. WhatsApp is opening...\n2. Long Press > Paste in the chat.");
+          }, 300);
+        } catch (clipboardErr) {
+          console.error("Clipboard failed:", clipboardErr);
+          const link = document.createElement('a');
+          link.download = `Bill-${orderSuccess.readable_bill_id}.png`;
+          link.href = URL.createObjectURL(blob);
+          link.click();
+          alert("⚠️ Clipboard blocked. Bill downloaded instead.");
+        }
+
+        message = `Hello ${orderSuccess.customer_name}, here is your bill receipt.`;
+        const waUrl = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+        setTimeout(() => {
+          window.open(waUrl, '_blank');
+        }, 500);
+      }
 
     } catch (err) {
       console.error("Error sharing:", err);
@@ -129,7 +162,7 @@ export default function OrderWizard({
 
   const form = useForm<CreateOrderInput>({
     resolver: zodResolver(createOrderSchema) as any,
-    defaultValues: {
+    defaultValues: initialOrder || {
       delivery_mode: 'PICKUP',
       discount_amount: 0,
       payment_status: 'UNPAID',
@@ -158,31 +191,45 @@ export default function OrderWizard({
   const prevStep = () => setCurrentStep((prev) => Math.max(prev - 1, 0));
 
   const handleCancel = () => {
-    if (confirm("Discard this order?")) {
+    if (confirm("Discard changes?")) {
       router.push('/');
     }
   };
 
   const onSubmit: SubmitHandler<CreateOrderInput> = async (data) => {
-    if(!confirm("Confirm order & generate bill?")) return;
+    const action = isEditing ? "Update Order" : "Create Order";
+    if(!confirm(`Confirm ${action}?`)) return;
     
     setIsSubmitting(true);
-    const result = await submitOrder(data, branchId);
+    
+    let result;
+    
+    if (isEditing && initialOrder?.id) {
+       result = await updateOrder(initialOrder.id, data);
+       if (result.success) {
+          const fullOrder = await fetchOrderDetails(initialOrder.id);
+          setOrderSuccess(fullOrder);
+       }
+    } else {
+       result = await submitOrder(data, branchId);
+       if (result.success && result.orderId) {
+          const fullOrder = await fetchOrderDetails(result.orderId);
+          setOrderSuccess(fullOrder);
+       }
+    }
     
     if (result.error) {
       alert(`Error: ${result.error}`);
       setIsSubmitting(false);
     } else {
-      if (result.orderId) {
-         const fullOrder = await fetchOrderDetails(result.orderId);
-         setOrderSuccess(fullOrder);
-      }
       setIsSubmitting(false);
     }
   };
 
-  // --- RENDER: Success / Preview View ---
   if (orderSuccess) {
+    const currentRowCount = orderSuccess ? calculateBillRows(orderSuccess) : 0;
+    const isLarge = currentRowCount > 13;
+
     return (
       <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center p-4">
         <div className="bg-white rounded-3xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[95vh]">
@@ -191,13 +238,11 @@ export default function OrderWizard({
              <div className="h-14 w-14 bg-green-100 rounded-full flex items-center justify-center text-green-600 mb-3">
                 <Check size={32} strokeWidth={3} />
              </div>
-             <h2 className="text-xl font-bold text-slate-800">Order Confirmed!</h2>
+             <h2 className="text-xl font-bold text-slate-800">Order Saved!</h2>
              <p className="text-sm text-slate-500">Bill #: {orderSuccess.readable_bill_id}</p>
           </div>
 
           <div className="flex-1 overflow-y-auto p-4 bg-slate-50/50 flex flex-col items-center relative">
-             
-             {/* 1. Visible Receipt */}
              <div className="shadow-lg transform scale-95 origin-top pointer-events-none">
                 <Receipt 
                   ref={receiptRef} 
@@ -206,8 +251,6 @@ export default function OrderWizard({
                   staffName={staffName} 
                 />
              </div>
-
-             {/* 2. Hidden Receipt for Image Capture (Ensures white bg) */}
              <div className="absolute top-0 left-0 -z-50 opacity-0 pointer-events-none w-[80mm]">
                 <Receipt 
                   ref={captureRef} 
@@ -224,8 +267,8 @@ export default function OrderWizard({
                 disabled={isCopying}
                 className="col-span-2 flex items-center justify-center gap-2 py-4 bg-green-600 text-white font-bold rounded-xl hover:bg-green-700 transition-colors shadow-md shadow-green-200 active:scale-95"
              >
-                {isCopying ? <Loader2 className="animate-spin" size={20} /> : <Send size={20} />} 
-                {isCopying ? "Preparing..." : "Share on WhatsApp"}
+                {isCopying ? <Loader2 className="animate-spin" size={20} /> : (isLarge ? <Link2 size={20} /> : <Send size={20} />)} 
+                {isCopying ? "Processing..." : (isLarge ? "Share Bill Link (PDF)" : "Share Bill Image")}
              </button>
 
              <button 
@@ -246,15 +289,12 @@ export default function OrderWizard({
     );
   }
 
-  // --- RENDER: Order Wizard (Input Form) ---
   return (
     <div className="flex flex-col h-full bg-slate-50 relative">
-      
-      {/* 1. Main Header & Stepper Area */}
       <div className="bg-white shadow-sm border-b border-slate-100 z-20">
         <div className="flex items-center justify-between px-6 py-4">
           <div>
-            <h1 className="text-xl font-bold text-slate-800">New Order</h1>
+            <h1 className="text-xl font-bold text-slate-800">{isEditing ? 'Edit Order' : 'New Order'}</h1>
             <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wide">
               {new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}
             </p>
@@ -300,7 +340,6 @@ export default function OrderWizard({
         </div>
       </div>
 
-      {/* 2. Dynamic Content Area */}
       <div className="flex-1 overflow-y-auto p-6 pb-32 scrollbar-hide">
         {currentStep === 0 && <CustomerStep form={form} />}
         {currentStep === 1 && (
@@ -309,13 +348,13 @@ export default function OrderWizard({
               dbItems={dbItems} 
               settings={settings} 
               specialRates={specialRates}
+              initialItems={initialOrder?.items}
            />
         )}
         {currentStep === 2 && <DeliveryStep form={form} />}
         {currentStep === 3 && <ReviewStep form={form} branchData={branchData} staffName={staffName} />}
       </div>
 
-      {/* 3. Footer Actions */}
       <div className="fixed bottom-0 left-0 right-0 bg-white p-4 border-t border-slate-100 flex gap-4 z-30 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
         {currentStep > 0 && (
           <button 
@@ -343,9 +382,9 @@ export default function OrderWizard({
             className="flex-1 bg-green-600 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-green-200 active:scale-95 transition-transform disabled:opacity-70 disabled:cursor-not-allowed hover:bg-green-700"
           >
             {isSubmitting ? (
-                <>Creating... <Loader2 className="animate-spin" size={20}/></>
+                <>Saving... <Loader2 className="animate-spin" size={20}/></>
             ) : (
-                <>Create & Save Order <Check size={20} /></>
+                <>{isEditing ? 'Update Order' : 'Create & Save'} <Check size={20} /></>
             )}
           </button>
         )}
