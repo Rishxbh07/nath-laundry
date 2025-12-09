@@ -36,6 +36,50 @@ export async function fetchLaundryMeta() {
   };
 }
 
+export async function fetchCustomerHistory(phone: string) {
+  const supabase = await createClient();
+  
+  // 1. Get Customer ID
+  const { data: customer } = await supabase
+    .from('customers')
+    .select('id')
+    .eq('phone', phone)
+    .single();
+
+  if (!customer) return [];
+
+  // 2. Fetch Last 3 Orders with Items (for weight sum)
+  const { data: orders } = await supabase
+    .from('orders')
+    .select(`
+      id,
+      readable_bill_id,
+      created_at,
+      final_amount,
+      total_piece_count,
+      order_items ( weight_kg )
+    `)
+    .eq('customer_id', customer.id)
+    .neq('status', 'CANCELLED') // Optional: Exclude cancelled
+    .order('created_at', { ascending: false })
+    .limit(3);
+
+  if (!orders) return [];
+
+  // 3. Transform and Calculate Totals
+  return orders.map((o: any) => {
+    const totalWeight = o.order_items?.reduce((sum: number, i: any) => sum + (i.weight_kg || 0), 0) || 0;
+    return {
+      id: o.id,
+      billId: o.readable_bill_id,
+      date: o.created_at,
+      amount: o.final_amount,
+      pcs: o.total_piece_count,
+      weight: parseFloat(totalWeight.toFixed(2))
+    };
+  });
+}
+
 // --- 2. Customer Search ---
 export async function searchCustomer(phone: string) {
   const supabase = await createClient();

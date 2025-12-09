@@ -41,21 +41,21 @@ export default function DeliveryStep({ form }: DeliveryStepProps) {
   const timeStr = watch('due_time');
   const address = watch('customer_address');
 
-  // --- Date Logic (48 Hour Minimum Constraint) ---
+  // --- Date Logic (UPDATED: Allows Today) ---
   const handleDateChange = (daysToAdd: number) => {
     const current = new Date(dateStr || Date.now());
     const nextDate = new Date(current);
     nextDate.setDate(current.getDate() + daysToAdd);
 
-    // Calculate Minimum Date (Today + 48 Hours)
+    // Calculate Minimum Date (Today)
+    // Previously: minDate.setDate(minDate.getDate() + 2);
     const minDate = new Date();
-    minDate.setDate(minDate.getDate() + 2); 
     minDate.setHours(0, 0, 0, 0);
 
     const checkDate = new Date(nextDate);
     checkDate.setHours(0, 0, 0, 0);
 
-    // Block if trying to go below 48 hours
+    // Block if trying to go into the past
     if (checkDate < minDate) return; 
 
     setValue('due_date', nextDate.toISOString().split('T')[0], { shouldValidate: true });

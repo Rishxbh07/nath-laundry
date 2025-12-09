@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
-import { MoreVertical, LogOut, User, Building2, MapPin } from 'lucide-react';
+import React from 'react';
+import { LogOut, User, Building2 } from 'lucide-react';
 import { signOut } from '@/app/actions/auth';
 
 interface HeroSectionProps {
@@ -12,11 +12,9 @@ interface HeroSectionProps {
 }
 
 export default function HeroSection({ fullName, branchCode, branchName, role }: HeroSectionProps) {
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-
   return (
     <div className="bg-white rounded-3xl p-6 shadow-[0_2px_8px_-2px_rgba(0,0,0,0.05)] border border-blue-50 relative">
-      <div className="flex justify-between items-start gap-4">
+      <div className="flex justify-between items-center gap-4">
         
         {/* Left Side: Avatar & Info */}
         <div className="flex items-center gap-4">
@@ -51,37 +49,15 @@ export default function HeroSection({ fullName, branchCode, branchName, role }: 
           </div>
         </div>
 
-        {/* Right Side: 3-Dot Menu */}
-        <div className="relative">
+        {/* Right Side: Log Out Button */}
+        <div>
           <button 
-            onClick={() => setIsMenuOpen(!isMenuOpen)}
-            className={`p-2 -mr-2 rounded-full transition-all duration-200 ${isMenuOpen ? 'bg-slate-100 text-slate-800' : 'text-slate-400 hover:bg-slate-50 hover:text-slate-600'}`}
+            onClick={() => signOut()}
+            className="flex flex-col items-center justify-center gap-1 h-12 w-12 rounded-2xl bg-red-50 text-red-500 hover:bg-red-100 hover:text-red-600 transition-all active:scale-95 border border-red-100"
+            title="Log Out"
           >
-            <MoreVertical size={20} />
+            <LogOut size={18} />
           </button>
-
-          {isMenuOpen && (
-            <>
-              {/* Invisible Backdrop to handle closing when clicking outside */}
-              <div 
-                className="fixed inset-0 z-10" 
-                onClick={() => setIsMenuOpen(false)}
-              />
-              
-              {/* Dropdown Menu */}
-              <div className="absolute right-0 top-full mt-2 w-40 bg-white rounded-2xl shadow-xl border border-slate-100 z-20 overflow-hidden animate-in fade-in zoom-in-95 duration-200 origin-top-right">
-                <div className="py-1">
-                  <button 
-                    onClick={() => signOut()}
-                    className="w-full text-left px-4 py-3 text-xs font-semibold text-red-500 hover:bg-red-50 hover:text-red-600 flex items-center gap-2 transition-colors"
-                  >
-                    <LogOut size={14} />
-                    Log Out
-                  </button>
-                </div>
-              </div>
-            </>
-          )}
         </div>
       </div>
     </div>

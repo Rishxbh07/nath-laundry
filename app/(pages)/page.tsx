@@ -1,7 +1,7 @@
 // File: app/(pages)/page.tsx
 import React from 'react';
 import Header from '../components/Header';
-import HeroSection from '../components/HeroSection';
+// HeroSection removed
 import StatsGrid from '../components/StatsGrid';
 import HistorySheet from '../components/HistorySheet'; 
 import HomeOrderLists from '../components/HomeOrderLists';
@@ -20,15 +20,7 @@ export default async function Home() {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select(`
-      full_name,
-      role,
-      branch_id,
-      branches (
-        code,
-        name
-      )
-    `)
+    .select('branch_id')
     .eq('user_id', user.id)
     .single();
 
@@ -41,16 +33,11 @@ export default async function Home() {
     fetchActionableOrders(profile.branch_id)
   ]);
 
-  // --- FIXED DATA TRANSFORMATION ---
-  // We check if customers is an array (just in case) or an object, and handle nulls.
   const formatOrder = (order: any) => {
     let cust = order.customers;
-    
-    // If it's an array, take the first item. If it's an object, use it directly.
     if (Array.isArray(cust)) {
         cust = cust[0];
     }
-    
     return {
       ...order,
       customers: cust || { name: 'Unknown Customer', phone: '' }
@@ -62,18 +49,6 @@ export default async function Home() {
     dueDelivery: rawActionableData.dueDelivery.map(formatOrder),
     duePickup: rawActionableData.duePickup.map(formatOrder)
   };
-  // --------------------------------
-
-  const fullName = profile?.full_name ?? 'Unknown Staff';
-  // @ts-ignore
-  const branchData = Array.isArray(profile?.branches) ? profile.branches[0] : profile?.branches;
-  const branchName = branchData?.name ?? 'Unknown Branch';
-  const branchCode = branchData?.code ?? 'HQ';
-
-  let displayRole = 'STAFF';
-  const rawRole = profile?.role;
-  if (rawRole === 'ADMIN') displayRole = 'OWNER';
-  else if (rawRole === 'AUTH_USER') displayRole = 'STAFF';
 
   return (
     <main className="min-h-screen flex flex-col pt-24 pb-32 px-6 bg-slate-50">
@@ -81,14 +56,7 @@ export default async function Home() {
 
       <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
         
-        <HeroSection 
-          fullName={fullName}
-          branchCode={branchCode}
-          branchName={branchName}
-          role={displayRole}
-        />
-
-        {/* Stats Section */}
+        {/* Stats Section moved to top */}
         <div>
           <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 ml-1">
             Today's Overview

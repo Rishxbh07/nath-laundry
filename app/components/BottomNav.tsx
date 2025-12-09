@@ -13,14 +13,13 @@ export default function BottomNav() {
   // Hide nav on specific pages
   if (
     pathname?.startsWith('/orders/new') || 
-    pathname?.startsWith('/orders/edit') || // <--- ADDED THIS LINE
+    pathname?.startsWith('/orders/edit') || 
     pathname?.startsWith('/scan') || 
     pathname?.startsWith('/bill')
   ) {
     return null;
   }
 
-  // Helper to check if a link is active
   const isActive = (path: string) => pathname === path;
 
   // Reusable Nav Item Component
@@ -75,13 +74,8 @@ export default function BottomNav() {
           
           <NavItem href="/orders/new" icon={FilePlus} label="Bill" />
           
-          <button className={`group relative flex flex-col items-center justify-center w-16 h-16 transition-all duration-300 text-slate-400 hover:text-slate-600`}>
-            <div className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-12 h-12 rounded-2xl transition-all duration-300 bg-transparent scale-0 group-hover:bg-slate-50 group-hover:scale-100`} />
-            <div className={`relative z-10 w-9 h-9 rounded-full bg-linear-to-br from-slate-300 to-slate-400 flex items-center justify-center transition-all duration-300 group-hover:scale-105`}>
-              <User size={18} strokeWidth={2.5} className="text-white" />
-            </div>
-            <span className={`relative z-10 text-[10px] font-medium mt-1 transition-all duration-300 opacity-0 group-hover:opacity-70`}>Profile</span>
-          </button>
+          {/* UPDATED PROFILE LINK */}
+          <NavItem href="/profile" icon={User} label="Profile" />
           
         </div>
       </div>

@@ -1,10 +1,12 @@
+// File: app/orders/steps/CustomerStep.tsx
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { UseFormReturn } from 'react-hook-form';
-import { Search, User } from 'lucide-react';
+import { Search, User, Loader2 } from 'lucide-react';
 import { CreateOrderInput } from '@/app/lib/schemas/order';
-import { searchCustomer } from '@/app/actions/order';
+import { searchCustomer, fetchCustomerHistory } from '@/app/actions/order'; // Updated Import
+import CustomerHistory from './CustomerHistory'; // Import the new component
 
 interface CustomerStepProps {
   form: UseFormReturn<CreateOrderInput>;
@@ -12,19 +14,31 @@ interface CustomerStepProps {
 
 export default function CustomerStep({ form }: CustomerStepProps) {
   const { register, setValue, getValues, formState: { errors } } = form;
+  
+  // Local state for history
+  const [history, setHistory] = useState<any[]>([]);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
   const handlePhoneSearch = async () => {
     const phone = getValues('customer_phone');
     if (phone?.length >= 10) {
-      const customer = await searchCustomer(phone);
+      setIsLoadingHistory(true);
+      
+      // Run both requests in parallel for speed
+      const [customer, historyData] = await Promise.all([
+        searchCustomer(phone),
+        fetchCustomerHistory(phone)
+      ]);
+
       if (customer) {
         setValue('customer_name', customer.name);
-        // We can pre-fill address in state but not show it here if we want, 
-        // or just set it and let DeliveryStep display it later.
         if (customer.address) {
             setValue('customer_address', customer.address);
         }
       }
+      
+      setHistory(historyData);
+      setIsLoadingHistory(false);
     }
   };
 
@@ -50,8 +64,13 @@ export default function CustomerStep({ form }: CustomerStepProps) {
               className="flex-1 bg-slate-50 border border-slate-200 p-4 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-slate-800 font-medium placeholder:text-slate-300"
               onBlur={handlePhoneSearch}
             />
-            <button type="button" onClick={handlePhoneSearch} className="bg-blue-600 text-white px-4 rounded-xl shadow-md shadow-blue-200 active:scale-95 transition-all">
-              <Search size={20} />
+            <button 
+              type="button" 
+              onClick={handlePhoneSearch} 
+              disabled={isLoadingHistory}
+              className="bg-blue-600 text-white px-4 rounded-xl shadow-md shadow-blue-200 active:scale-95 transition-all flex items-center justify-center min-w-[50px]"
+            >
+              {isLoadingHistory ? <Loader2 size={20} className="animate-spin" /> : <Search size={20} />}
             </button>
           </div>
           {errors.customer_phone && <p className="text-red-500 text-xs mt-1 ml-1 font-medium">{errors.customer_phone.message}</p>}
@@ -66,6 +85,10 @@ export default function CustomerStep({ form }: CustomerStepProps) {
           />
           {errors.customer_name && <p className="text-red-500 text-xs mt-1 ml-1 font-medium">{errors.customer_name.message}</p>}
         </div>
+
+        {/* --- History Component Injection --- */}
+        <CustomerHistory history={history} />
+        
       </div>
     </div>
   );
