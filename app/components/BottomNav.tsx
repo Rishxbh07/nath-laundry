@@ -15,7 +15,9 @@ export default function BottomNav() {
     pathname?.startsWith('/orders/new') || 
     pathname?.startsWith('/orders/edit') || 
     pathname?.startsWith('/scan') || 
-    pathname?.startsWith('/bill')
+    pathname?.startsWith('/bill') ||
+    pathname?.startsWith('/terms') || // <--- Added
+    pathname?.startsWith('/login')    // <--- Added
   ) {
     return null;
   }

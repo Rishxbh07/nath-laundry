@@ -1,8 +1,9 @@
 'use client'
 
 import { login } from './actions'
-import { useActionState } from 'react'
+import { useActionState, useState } from 'react' // Import useState
 import { Lock } from 'lucide-react'
+import Link from 'next/link' // Import Link
 
 const initialState = {
   error: '',
@@ -16,6 +17,9 @@ export default function LoginPage() {
     }
     return { error: '' };
   }, initialState);
+
+  // New State for Terms Checkbox
+  const [termsAccepted, setTermsAccepted] = useState(false);
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6">
@@ -68,6 +72,22 @@ export default function LoginPage() {
             />
           </div>
 
+          {/* Terms & Conditions Checkbox */}
+          <div className="flex items-start gap-3 px-1 py-2">
+            <div className="flex items-center h-5">
+              <input
+                id="terms"
+                type="checkbox"
+                checked={termsAccepted}
+                onChange={(e) => setTermsAccepted(e.target.checked)}
+                className="w-4 h-4 border border-slate-300 rounded bg-slate-50 focus:ring-3 focus:ring-blue-300 cursor-pointer"
+              />
+            </div>
+            <label htmlFor="terms" className="text-xs text-slate-500 font-medium leading-tight cursor-pointer select-none">
+              I have read all the <Link href="/terms" className="text-blue-600 hover:underline font-bold" target="_blank">terms & conditions</Link> and agree to them.
+            </label>
+          </div>
+
           {state?.error && (
             <div className="p-3 rounded-lg bg-red-50 text-red-600 text-xs font-medium text-center border border-red-100">
               {state.error}
@@ -76,8 +96,8 @@ export default function LoginPage() {
 
           <button 
             type="submit" 
-            disabled={isPending}
-            className="w-full text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 font-semibold rounded-xl text-sm px-5 py-4 text-center transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-blue-600/20"
+            disabled={isPending || !termsAccepted} // Disabled logic updated
+            className="w-full text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 font-semibold rounded-xl text-sm px-5 py-4 text-center transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-blue-600/20 active:scale-95"
           >
             {isPending ? 'Verifying...' : 'Authenticate'}
           </button>
