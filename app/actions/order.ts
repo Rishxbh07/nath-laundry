@@ -100,7 +100,7 @@ export async function submitOrder(data: CreateOrderInput, branchId: string) {
   return { success: true, orderId };
 }
 
-// --- 4. Update Existing Order (EDIT) ---
+// --- 4. Update Existing Order (EDIT) - FIXED ---
 export async function updateOrder(orderId: string, data: CreateOrderInput) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -110,13 +110,28 @@ export async function updateOrder(orderId: string, data: CreateOrderInput) {
   const finalAmount = Math.max(0, totalAmount - (data.discount_amount || 0));
   const combinedDateTime = `${data.due_date}T${data.due_time}:00`;
 
-  // Update Order Details
+  // A. Handle Customer Update First (Because 'orders' table doesn't have address/name columns)
+  // We upsert the customer based on phone number to ensure we have the correct ID and updated details
+  const { data: customerData, error: customerError } = await supabase
+    .from('customers')
+    .upsert({ 
+      phone: data.customer_phone, 
+      name: data.customer_name, 
+      address: data.customer_address 
+    }, { onConflict: 'phone' })
+    .select('id')
+    .single();
+
+  if (customerError) {
+    console.error("Update Customer Failed:", customerError);
+    return { error: "Failed to update customer details" };
+  }
+
+  // B. Update Order Details (Linking to the correct Customer ID)
   const { error: orderError } = await supabase
     .from('orders')
     .update({
-      customer_name: data.customer_name,
-      customer_phone: data.customer_phone,
-      customer_address: data.customer_address,
+      customer_id: customerData.id, // Link to the customer we just updated
       delivery_mode: data.delivery_mode,
       due_date: new Date(combinedDateTime).toISOString(),
       discount_amount: data.discount_amount,
@@ -133,7 +148,7 @@ export async function updateOrder(orderId: string, data: CreateOrderInput) {
 
   if (orderError) return { error: orderError.message };
 
-  // Replace Items (Delete All -> Insert New)
+  // C. Replace Items (Delete All -> Insert New)
   const { error: deleteError } = await supabase
     .from('order_items')
     .delete()
@@ -167,7 +182,6 @@ export async function updateOrder(orderId: string, data: CreateOrderInput) {
 
 // --- 5. Fetch Details (For Receipt & Edit) ---
 export async function fetchOrderDetails(orderId: string) {
-  // IMPORTANT: Do NOT put revalidatePath here. It causes the 'not a component' error in Page files.
   const supabase = await createClient();
   
   const { data, error } = await supabase
@@ -196,9 +210,10 @@ export async function fetchOrderDetails(orderId: string) {
 
   return {
     ...data,
+    // Fallback logic to get customer details from the joined table
     customer_name: data.customers?.name || 'Unknown',
     customer_phone: data.customers?.phone || 'Unknown',
-    customer_address: data.customer_address || data.customers?.address || '',
+    customer_address: data.customers?.address || '',
     closed_by_name: closedByName,
     created_by_name: createdByName
   };

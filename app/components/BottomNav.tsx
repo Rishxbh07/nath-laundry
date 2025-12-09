@@ -1,3 +1,4 @@
+// File: app/components/BottomNav.tsx
 'use client';
 
 import React from 'react';
@@ -10,9 +11,9 @@ export default function BottomNav() {
   const pathname = usePathname();
 
   // Hide nav on specific pages
-  // REMOVED: searchParams check (it causes lag)
   if (
     pathname?.startsWith('/orders/new') || 
+    pathname?.startsWith('/orders/edit') || // <--- ADDED THIS LINE
     pathname?.startsWith('/scan') || 
     pathname?.startsWith('/bill')
   ) {
@@ -22,6 +23,7 @@ export default function BottomNav() {
   // Helper to check if a link is active
   const isActive = (path: string) => pathname === path;
 
+  // Reusable Nav Item Component
   const NavItem = ({ href, icon: Icon, label }: { href: string; icon: any; label: string }) => {
     const active = isActive(href);
     return (
@@ -51,7 +53,6 @@ export default function BottomNav() {
   };
 
   return (
-    // ADDED CLASS: bottom-nav-container
     <div className="bottom-nav-container fixed bottom-8 left-0 right-0 z-50 flex justify-center pointer-events-none px-6 print:hidden">
       
       {/* Glass Dock Container */}
