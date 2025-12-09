@@ -3,21 +3,21 @@ import React from 'react';
 import Header from '../components/Header';
 import HeroSection from '../components/HeroSection';
 import StatsGrid from '../components/StatsGrid';
-import HistorySheet from '../components/HistorySheet'; // Import History
+import HistorySheet from '../components/HistorySheet'; 
+import HomeOrderLists from '../components/HomeOrderLists';
 import { createClient } from '@/app/utils/supabase/server';
 import { redirect } from 'next/navigation';
 import { fetchDailyStats } from '@/app/actions/stats';
+import { fetchActionableOrders } from '@/app/actions/home';
 
 export default async function Home() {
   const supabase = await createClient();
 
-  // 1. Verify User Session
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) {
     redirect('/login');
   }
 
-  // 2. Fetch Profile & Branch Info
   const { data: profile } = await supabase
     .from('profiles')
     .select(`
@@ -32,13 +32,40 @@ export default async function Home() {
     .eq('user_id', user.id)
     .single();
 
-  // 3. Data Fetching
-  const stats = profile?.branch_id 
-    ? await fetchDailyStats(profile.branch_id) 
-    : { createdCount: 0, totalWeight: 0, clearedCount: 0, dueCount: 0 };
+  if (!profile?.branch_id) {
+    return <div className="p-10 text-center text-slate-400">No branch assigned.</div>;
+  }
+
+  const [stats, rawActionableData] = await Promise.all([
+    fetchDailyStats(profile.branch_id),
+    fetchActionableOrders(profile.branch_id)
+  ]);
+
+  // --- FIXED DATA TRANSFORMATION ---
+  // We check if customers is an array (just in case) or an object, and handle nulls.
+  const formatOrder = (order: any) => {
+    let cust = order.customers;
+    
+    // If it's an array, take the first item. If it's an object, use it directly.
+    if (Array.isArray(cust)) {
+        cust = cust[0];
+    }
+    
+    return {
+      ...order,
+      customers: cust || { name: 'Unknown Customer', phone: '' }
+    };
+  };
+
+  const actionableData = {
+    overdue: rawActionableData.overdue.map(formatOrder),
+    dueDelivery: rawActionableData.dueDelivery.map(formatOrder),
+    duePickup: rawActionableData.duePickup.map(formatOrder)
+  };
+  // --------------------------------
 
   const fullName = profile?.full_name ?? 'Unknown Staff';
-  // @ts-ignore: Supabase join types
+  // @ts-ignore
   const branchData = Array.isArray(profile?.branches) ? profile.branches[0] : profile?.branches;
   const branchName = branchData?.name ?? 'Unknown Branch';
   const branchCode = branchData?.code ?? 'HQ';
@@ -69,15 +96,20 @@ export default async function Home() {
           <StatsGrid stats={stats} />
         </div>
 
+        {/* Actionable Orders Section */}
+        <div>
+          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 ml-1">
+            Requires Attention
+          </h3>
+          <HomeOrderLists data={actionableData} />
+        </div>
+
         {/* History Section */}
         <div>
            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 ml-1">
             Quick Actions
           </h3>
-          {/* Only render if we have a branch ID */}
-          {profile?.branch_id && (
-            <HistorySheet branchId={profile.branch_id} />
-          )}
+          <HistorySheet branchId={profile.branch_id} />
         </div>
 
         <div className="flex flex-col items-center justify-center mt-4 text-center space-y-2 opacity-40">

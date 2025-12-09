@@ -26,6 +26,23 @@ CREATE TABLE public.customers (
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT customers_pkey PRIMARY KEY (id)
 );
+CREATE TABLE public.daily_analytics_snapshots (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  branch_id uuid NOT NULL,
+  date date NOT NULL DEFAULT CURRENT_DATE,
+  total_revenue numeric DEFAULT 0,
+  total_sales numeric DEFAULT 0,
+  orders_created integer DEFAULT 0,
+  orders_completed integer DEFAULT 0,
+  total_load_kg numeric DEFAULT 0,
+  total_pieces integer DEFAULT 0,
+  new_customers integer DEFAULT 0,
+  returning_customers integer DEFAULT 0,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT daily_analytics_snapshots_pkey PRIMARY KEY (id),
+  CONSTRAINT daily_analytics_snapshots_branch_id_fkey FOREIGN KEY (branch_id) REFERENCES public.branches(id)
+);
 CREATE TABLE public.laundry_items (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   name text NOT NULL,
@@ -69,6 +86,7 @@ CREATE TABLE public.order_items (
   service_type text NOT NULL,
   unit_price numeric NOT NULL DEFAULT 0,
   total_price numeric NOT NULL DEFAULT 0,
+  is_chargeable boolean DEFAULT true,
   CONSTRAINT order_items_pkey PRIMARY KEY (id),
   CONSTRAINT order_items_order_id_fkey FOREIGN KEY (order_id) REFERENCES public.orders(id),
   CONSTRAINT order_items_item_id_fkey FOREIGN KEY (item_id) REFERENCES public.laundry_items(id)
@@ -90,9 +108,15 @@ CREATE TABLE public.orders (
   completed_at timestamp with time zone,
   status text NOT NULL DEFAULT 'RECEIVED'::text CHECK (status = ANY (ARRAY['RECEIVED'::text, 'IN_PROCESS'::text, 'READY'::text, 'DELIVERED'::text, 'CANCELLED'::text])),
   payment_method text CHECK (payment_method = ANY (ARRAY['CASH'::text, 'UPI'::text, 'OTHER'::text])),
+  created_by uuid,
+  closed_by uuid,
+  bill_status USER-DEFINED NOT NULL DEFAULT 'OPEN'::bill_status_type,
+  total_piece_count integer DEFAULT 0,
   CONSTRAINT orders_pkey PRIMARY KEY (id),
   CONSTRAINT orders_branch_id_fkey FOREIGN KEY (branch_id) REFERENCES public.branches(id),
-  CONSTRAINT orders_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.customers(id)
+  CONSTRAINT orders_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.customers(id),
+  CONSTRAINT orders_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id),
+  CONSTRAINT orders_closed_by_fkey FOREIGN KEY (closed_by) REFERENCES auth.users(id)
 );
 CREATE TABLE public.profiles (
   id uuid NOT NULL DEFAULT gen_random_uuid(),

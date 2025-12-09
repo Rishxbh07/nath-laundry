@@ -2,55 +2,107 @@
 'use client';
 
 import React from 'react';
-import { Home, QrCode, FilePlus } from 'lucide-react';
+import { Home, QrCode, FilePlus, LayoutDashboard, User } from 'lucide-react';
 import Link from 'next/link';
-import { useRouter, usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 
 export default function BottomNav() {
   const router = useRouter();
   const pathname = usePathname();
 
-  // Logic: Hide Nav on "New Order" AND "Scan" pages to prevent overlap
+  // Hide nav on specific pages
   if (pathname?.startsWith('/orders/new') || pathname?.startsWith('/scan')) {
     return null;
   }
 
-  const openCamera = () => {
-    router.push('/scan');
+  // Helper to check if a link is active
+  const isActive = (path: string) => pathname === path;
+
+  // Reusable Nav Item Component
+  // Note: Next.js Link prefetch is enabled by default (prefetch={true})
+  const NavItem = ({ href, icon: Icon, label }: { href: string; icon: any; label: string }) => {
+    const active = isActive(href);
+    return (
+      <Link
+        href={href}
+        className={`group relative flex flex-col items-center justify-center w-16 h-16 transition-all duration-300 ${
+          active ? 'text-blue-600' : 'text-slate-400 hover:text-slate-600'
+        }`}
+      >
+        {/* Active Background Pill */}
+        <div 
+          className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-12 h-12 rounded-2xl transition-all duration-300 ${
+            active ? 'bg-blue-50 scale-100' : 'bg-transparent scale-0 group-hover:bg-slate-50 group-hover:scale-100'
+          }`} 
+        />
+        
+        {/* Icon */}
+        <Icon 
+          size={24} 
+          strokeWidth={active ? 2.5 : 2} 
+          className={`relative z-10 transition-all duration-300 ${active ? 'scale-110' : ''}`} 
+        />
+        
+        {/* Label */}
+        <span className={`relative z-10 text-[10px] font-medium mt-1 transition-all duration-300 ${
+          active ? 'opacity-100' : 'opacity-0 group-hover:opacity-70'
+        }`}>
+          {label}
+        </span>
+      </Link>
+    );
   };
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-50 h-20 bg-white shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] flex items-center justify-between px-8 pb-2">
+    <div className="fixed bottom-8 left-0 right-0 z-50 flex justify-center pointer-events-none px-6">
       
-      {/* Left Action: Home */}
-      <Link 
-        href="/" 
-        className="flex flex-col items-center justify-center gap-1 text-slate-400 hover:text-blue-600 transition-colors w-16"
-      >
-        <Home size={28} strokeWidth={2} />
-        <span className="text-[10px] font-medium uppercase tracking-wide">Home</span>
-      </Link>
-
-      {/* Center Action: QR Scanner */}
-      <div className="relative -top-6">
-        <button 
-          onClick={openCamera}
-          className="flex items-center justify-center w-20 h-20 rounded-full bg-linear-to-r from-blue-700 via-blue-500 to-sky-400 shadow-lg shadow-blue-300 hover:scale-105 active:scale-95 transition-all duration-200 border-4 border-slate-50"
-        >
-          <QrCode size={36} color="white" strokeWidth={2.5} />
-        </button>
+      {/* Glass Dock Container */}
+      <div className="pointer-events-auto relative flex items-center justify-center gap-2 w-full max-w-md px-4 py-3 bg-white/95 backdrop-blur-2xl border border-slate-200/60 shadow-[0_8px_32px_rgba(0,0,0,0.08)] rounded-[28px]">
+        
+        {/* Subtle inner glow */}
+        <div className="absolute inset-0 rounded-[28px] bg-linear-to-b from-white/40 to-transparent pointer-events-none" />
+        
+        {/* Navigation Items */}
+        <div className="relative z-10 flex items-center justify-around w-full">
+          
+          <NavItem href="/" icon={Home} label="Home" />
+          
+          <NavItem href="/dashboard" icon={LayoutDashboard} label="Data" />
+          
+          {/* Central Scan Button */}
+          <button 
+            onClick={() => router.push('/scan')}
+            className="group relative flex items-center justify-center w-[68px] h-[68px] -my-6 rounded-3xl bg-linear-to-br from-blue-500 via-blue-600 to-indigo-600 text-white shadow-[0_12px_28px_rgba(59,130,246,0.35)] transition-all duration-300 hover:shadow-[0_16px_36px_rgba(59,130,246,0.45)] hover:scale-105 active:scale-95"
+          >
+            {/* Glossy overlay */}
+            <div className="absolute inset-0 rounded-3xl bg-linear-to-b from-white/25 to-transparent opacity-60 group-hover:opacity-80 transition-opacity" />
+            
+            {/* Animated ring on hover */}
+            <div className="absolute inset-0 rounded-3xl border-2 border-white/40 opacity-0 group-hover:opacity-100 group-hover:scale-110 transition-all duration-500" />
+            
+            <QrCode size={32} strokeWidth={2.5} className="relative z-10 drop-shadow-lg transition-transform duration-500 group-hover:rotate-12" />
+          </button>
+          
+          {/* This link now has prefetching enabled implicitly by Next.js */}
+          <NavItem href="/orders/new" icon={FilePlus} label="Bill" />
+          
+          {/* Profile Button Placeholder */}
+          <button
+            className={`group relative flex flex-col items-center justify-center w-16 h-16 transition-all duration-300 text-slate-400 hover:text-slate-600`}
+          >
+            <div 
+              className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-12 h-12 rounded-2xl transition-all duration-300 bg-transparent scale-0 group-hover:bg-slate-50 group-hover:scale-100`} 
+            />
+            <div className={`relative z-10 w-9 h-9 rounded-full bg-linear-to-br from-slate-300 to-slate-400 flex items-center justify-center transition-all duration-300 group-hover:scale-105`}>
+              <User size={18} strokeWidth={2.5} className="text-white" />
+            </div>
+            <span className={`relative z-10 text-[10px] font-medium mt-1 transition-all duration-300 opacity-0 group-hover:opacity-70`}>
+              Profile
+            </span>
+          </button>
+          
+        </div>
       </div>
-
-      {/* Right Action: Create New Bill (Prefetched for Speed) */}
-      <Link 
-        href="/orders/new"
-        prefetch={false} // Disabled to prevent Auth Middleware conflicts
-        className="flex flex-col items-center justify-center gap-1 text-slate-400 hover:text-blue-600 transition-colors w-16"
-      >
-        <FilePlus size={28} strokeWidth={2} />
-        <span className="text-[10px] font-medium uppercase tracking-wide">New Bill</span>
-      </Link>
-
     </div>
   );
 }

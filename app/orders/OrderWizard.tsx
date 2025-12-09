@@ -1,4 +1,3 @@
-// File: app/orders/OrderWizard.tsx
 'use client';
 
 import React, { useState, useRef } from 'react';
@@ -6,10 +5,10 @@ import { useForm, SubmitHandler } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { createOrderSchema, CreateOrderInput } from '@/app/lib/schemas/order';
 import { submitOrder, fetchOrderDetails } from '@/app/actions/order';
-import { ChevronRight, ChevronLeft, Check, X, User, Shirt, Truck, IndianRupee, Printer, Home, Send, Loader2 } from 'lucide-react';
+import { ChevronRight, ChevronLeft, Check, X, User, Shirt, Truck, IndianRupee, Printer, Home, Send, Loader2, Copy } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useReactToPrint } from 'react-to-print';
-import { toBlob, toPng } from 'html-to-image'; 
+import { toBlob } from 'html-to-image'; 
 import Receipt from '@/app/components/Receipt';
 import dynamic from 'next/dynamic';
 
@@ -33,7 +32,7 @@ interface OrderWizardProps {
   settings: any;
   specialRates?: any[];
   branchData?: any;
-  staffName?: string; // Corrected Interface
+  staffName?: string;
 }
 
 const STEPS = [
@@ -54,6 +53,7 @@ export default function OrderWizard({
   const [currentStep, setCurrentStep] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderSuccess, setOrderSuccess] = useState<any>(null);
+  const [isCopying, setIsCopying] = useState(false); 
   const router = useRouter();
 
   const receiptRef = useRef<HTMLDivElement>(null); 
@@ -63,48 +63,67 @@ export default function OrderWizard({
     contentRef: receiptRef,
   });
 
+  // --- UNIVERSAL "COPY & CHAT" LOGIC ---
   const handleWhatsAppShare = async () => {
     if (!orderSuccess || !captureRef.current) return;
+    setIsCopying(true);
 
     try {
-      const message = `Thank you for your business. We handle the dirty work.\n\nBill ID: *${orderSuccess.readable_bill_id}*\nAmount: ₹${orderSuccess.final_amount}\n\nIf you have any complaints, use this link with your Bill ID to file feedback:\nhttps://nath-laundry.com/feedback`; 
-
-      const blob = await toBlob(captureRef.current, { backgroundColor: '#ffffff' });
-      if (!blob) throw new Error("Failed to generate image blob");
-
-      let phone = orderSuccess.customer_phone.replace(/\D/g, ''); 
-      if (phone.length === 10) phone = '91' + phone; 
-
-      if (navigator.share && navigator.canShare && navigator.canShare({ files: [new File([blob], 'bill.png', { type: 'image/png' })] })) {
-        const file = new File([blob], `Bill-${orderSuccess.readable_bill_id}.png`, { type: 'image/png' });
-        try {
-          await navigator.share({
-            files: [file],
-            title: 'Your Laundry Bill',
-            text: message,
-          });
-          return; 
-        } catch (e) {
-          console.log("Web Share skipped, falling back to desktop mode.");
-        }
+      // 1. Get Phone Number
+      let rawPhone = orderSuccess.customer_phone;
+      if (!rawPhone || rawPhone === 'Unknown') {
+         const cust = orderSuccess.customers;
+         if (Array.isArray(cust)) rawPhone = cust[0]?.phone;
+         else if (cust) rawPhone = cust.phone;
       }
 
-      const dataUrl = await toPng(captureRef.current, { backgroundColor: '#ffffff' });
-      const link = document.createElement('a');
-      link.download = `Bill-${orderSuccess.readable_bill_id}.png`;
-      link.href = dataUrl;
-      link.click();
+      let phone = (rawPhone || '').replace(/\D/g, ''); 
+      if (phone.length < 10) {
+         alert("Invalid phone number.");
+         setIsCopying(false);
+         return;
+      }
+      if (phone.length === 10) phone = '91' + phone; 
 
-      const encodedMsg = encodeURIComponent(message);
-      const waUrl = `https://wa.me/${phone}?text=${encodedMsg}`;
+      // 2. Generate Image Blob
+      const blob = await toBlob(captureRef.current, { backgroundColor: '#ffffff', pixelRatio: 3 });
+      if (!blob) throw new Error("Failed to generate image");
+
+      // 3. COPY TO CLIPBOARD (Works on Mobile & PC)
+      try {
+        const data = [new ClipboardItem({ 'image/png': blob })];
+        await navigator.clipboard.write(data);
+        
+        // Success Toast/Alert
+        // We use a short timeout to ensure the user sees this before the tab switch
+        setTimeout(() => {
+           alert("✅ Bill Copied!\n\n1. WhatsApp is opening...\n2. Long Press > Paste in the chat.");
+        }, 300);
+
+      } catch (clipboardErr) {
+        console.error("Clipboard failed:", clipboardErr);
+        // Fallback: If clipboard fails (rare on modern devices), we default to download
+        const link = document.createElement('a');
+        link.download = `Bill-${orderSuccess.readable_bill_id}.png`;
+        link.href = URL.createObjectURL(blob);
+        link.click();
+        alert("⚠️ Clipboard blocked. Bill downloaded instead.");
+      }
+
+      // 4. OPEN WHATSAPP (Direct Chat - No Contact Save Needed)
+      const message = `Hello ${orderSuccess.customer_name}, here is your bill receipt.`;
+      const waUrl = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
       
-      window.open(waUrl, '_blank');
-      
-      alert("Image downloaded! \n\n1. WhatsApp Web will open.\n2. The text is pre-filled.\n3. Please DRAG the downloaded bill image into the chat.");
+      // Delay slightly to allow the clipboard write to finish cleanly
+      setTimeout(() => {
+        window.open(waUrl, '_blank');
+      }, 500);
 
     } catch (err) {
       console.error("Error sharing:", err);
-      alert("Failed to process WhatsApp share.");
+      alert("System Error. Please try printing.");
+    } finally {
+      setIsCopying(false);
     }
   };
 
@@ -176,7 +195,7 @@ export default function OrderWizard({
              <p className="text-sm text-slate-500">Bill #: {orderSuccess.readable_bill_id}</p>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-4 bg-slate-50/50 flex flex-col items-center">
+          <div className="flex-1 overflow-y-auto p-4 bg-slate-50/50 flex flex-col items-center relative">
              
              {/* 1. Visible Receipt */}
              <div className="shadow-lg transform scale-95 origin-top pointer-events-none">
@@ -184,17 +203,17 @@ export default function OrderWizard({
                   ref={receiptRef} 
                   order={orderSuccess} 
                   branch={branchData}
-                  staffName={staffName} // Pass name
+                  staffName={staffName} 
                 />
              </div>
 
-             {/* 2. Hidden Receipt for Image Capture */}
+             {/* 2. Hidden Receipt for Image Capture (Ensures white bg) */}
              <div className="absolute top-0 left-0 -z-50 opacity-0 pointer-events-none w-[80mm]">
                 <Receipt 
                   ref={captureRef} 
                   order={orderSuccess} 
                   branch={branchData} 
-                  staffName={staffName} // Pass name
+                  staffName={staffName} 
                 />
              </div>
           </div>
@@ -202,9 +221,11 @@ export default function OrderWizard({
           <div className="p-4 border-t border-slate-100 bg-white grid grid-cols-2 gap-3 shrink-0">
              <button 
                 onClick={handleWhatsAppShare}
-                className="col-span-2 flex items-center justify-center gap-2 py-4 bg-green-600 text-white font-bold rounded-xl hover:bg-green-700 transition-colors shadow-md shadow-green-200"
+                disabled={isCopying}
+                className="col-span-2 flex items-center justify-center gap-2 py-4 bg-green-600 text-white font-bold rounded-xl hover:bg-green-700 transition-colors shadow-md shadow-green-200 active:scale-95"
              >
-                <Send size={20} /> Send on WhatsApp
+                {isCopying ? <Loader2 className="animate-spin" size={20} /> : <Send size={20} />} 
+                {isCopying ? "Preparing..." : "Share on WhatsApp"}
              </button>
 
              <button 
