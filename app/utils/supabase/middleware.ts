@@ -43,11 +43,15 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser()
 
   // 2. Public Route Logic (Login/Auth/Bill Links are always allowed)
-  const isPublicRoute = 
+ const isPublicRoute = 
     request.nextUrl.pathname.startsWith('/login') || 
     request.nextUrl.pathname.startsWith('/auth') ||
     request.nextUrl.pathname.startsWith('/bill') || 
-    request.nextUrl.pathname.startsWith('/terms');
+    request.nextUrl.pathname.startsWith('/terms') ||
+    // ADD THESE LINES:
+    request.nextUrl.pathname.startsWith('/manifest.json') || 
+    request.nextUrl.pathname.startsWith('/icons/') ||
+    request.nextUrl.pathname.startsWith('/sw.js');
 
   if (!user && !isPublicRoute) {
     const url = request.nextUrl.clone()

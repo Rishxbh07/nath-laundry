@@ -14,9 +14,12 @@ export const config = {
      * - favicon.ico (favicon file)
      * - login
      * - auth
-     * - bill  <-- Ensure this keyword is NOT in the exclusion list if using a negative lookahead, 
-     * OR just use the standard standard negative lookahead below:
+     * - manifest.json (PWA Manifest)  <-- ADDED
+     * - icons/ (PWA Icons)            <-- ADDED
+     * - sw.js (Service Worker)        <-- ADDED
+     * - workbox- (Workbox Files)      <-- ADDED
+     * - images with extensions
      */
-    '/((?!_next/static|_next/image|favicon.ico|login|auth|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|manifest.json|icons/|sw.js|workbox-|login|auth|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }
