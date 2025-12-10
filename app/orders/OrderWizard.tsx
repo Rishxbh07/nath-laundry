@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, use, Suspense } from 'react';
+import React, { useState, useRef } from 'react';
 import { useForm, SubmitHandler } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { createOrderSchema, CreateOrderInput } from '@/app/lib/schemas/order';
@@ -16,25 +16,29 @@ import Receipt from '@/app/components/Receipt';
 import dynamic from 'next/dynamic';
 
 import CustomerStep from './steps/CustomerStep';
-// Dynamic imports aren't strictly necessary for steps if we use Suspense, 
-// but good for code splitting. We'll keep them standard imports for simplicity in the wrapper.
 import ItemsStep from './steps/ItemStep';
 import DeliveryStep from './steps/DeliveryStep';
 
-const ReviewStep = dynamic(() => import('./steps/ReviewStep'), { ssr: false });
+const ReviewStep = dynamic(() => import('./steps/ReviewStep'), {
+  loading: () => (
+    <div className="flex flex-col items-center justify-center h-64 text-slate-400">
+      <Loader2 className="animate-spin mb-2" size={32} />
+      <p className="text-xs font-bold uppercase tracking-widest">Preparing Billing Engine...</p>
+    </div>
+  ),
+  ssr: false 
+});
 
+// IMPORTANT: Updated Interface
 interface OrderWizardProps {
   branchId: string;
-  staffName?: string;
-  // New pattern: Accept either resolved data OR a promise
-  metaPromise?: Promise<any>; 
-  // Legacy/Edit support
-  items?: any[];
-  settings?: any;
+  items: any[];
+  settings: any;
   specialRates?: any[];
   branchData?: any;
-  initialOrder?: any;
-  isEditing?: boolean;
+  staffName?: string;
+  initialOrder?: any; // Required for edit
+  isEditing?: boolean; // Required for edit
 }
 
 const STEPS = [
@@ -44,75 +48,13 @@ const STEPS = [
   { label: 'Billing', icon: IndianRupee },
 ];
 
-// --- 1. Data Resolver Wrapper ---
-// This component "Suspends" until the promise resolves.
-// It effectively blocks rendering of Step 1+ until data is ready.
-function StepsWithData({ 
-  promise, 
-  preloadedData, 
-  step, 
-  form 
-}: { 
-  promise?: Promise<any>, 
-  preloadedData?: any, 
-  step: number, 
-  form: any 
-}) {
-  // If we have preloaded data (Edit mode), use it.
-  // If we have a promise (New mode), unwrap it using `use()`.
-  let meta = preloadedData;
-  if (promise) {
-    meta = use(promise);
-  }
-
-  // If we still don't have meta (shouldn't happen if logic is correct), return null
-  if (!meta) return null;
-
-  switch (step) {
-    case 1:
-      return (
-        <ItemsStep 
-          form={form} 
-          dbItems={meta.items} 
-          settings={meta.settings} 
-          specialRates={meta.specialRates}
-          initialItems={form.getValues('items')} // Use form values for persistence
-        />
-      );
-    case 2:
-      return <DeliveryStep form={form} />;
-    case 3:
-      return (
-        <ReviewStep 
-          form={form} 
-          branchData={meta.branch} 
-          staffName={meta.user_name} // Use name from DB if available
-        />
-      );
-    default:
-      return null;
-  }
-}
-
-// --- 2. Loading Fallback ---
-function StepLoading() {
-  return (
-    <div className="h-full flex flex-col items-center justify-center text-slate-400 space-y-4 min-h-[300px]">
-      <Loader2 className="animate-spin text-blue-500" size={40} />
-      <div className="text-center">
-        <p className="text-sm font-bold uppercase tracking-widest text-slate-600">Loading Inventory...</p>
-        <p className="text-xs mt-1">Fetching latest rates & items</p>
-      </div>
-    </div>
-  );
-}
-
-// --- 3. Main Wizard ---
 export default function OrderWizard({ 
   branchId, 
+  items: dbItems, 
+  settings, 
+  specialRates = [], 
+  branchData,
   staffName,
-  metaPromise,
-  items, settings, specialRates, branchData, // Legacy/Edit props
   initialOrder, 
   isEditing = false
 }: OrderWizardProps) {
@@ -125,12 +67,98 @@ export default function OrderWizard({
   const receiptRef = useRef<HTMLDivElement>(null); 
   const captureRef = useRef<HTMLDivElement>(null); 
 
-  const handlePrint = useReactToPrint({ contentRef: receiptRef });
+  const handlePrint = useReactToPrint({
+    contentRef: receiptRef,
+  });
 
-  // Pack legacy props for Edit Mode
-  const preloadedMeta = isEditing ? {
-    items, settings, specialRates, branch: branchData, user_name: staffName
-  } : undefined;
+  // --- HELPER: Count Rows for Smart Switch ---
+  const calculateBillRows = (order: any) => {
+    if (!order) return 0;
+    
+    const items = order.order_items || [];
+    const hasBulkPile = items.some((i: any) => i.item_name_snapshot?.startsWith('Bulk Pile') || i.item_name?.startsWith('Bulk Pile'));
+    const pileContentCount = items.filter((i: any) => 
+      !i.item_name_snapshot?.startsWith('Bulk Pile') && 
+      !i.item_name?.startsWith('Bulk Pile') &&
+      (i.service_type === 'Wash & Fold' || i.service_type === 'Wash & Iron') &&
+      (Number(i.total_price) === 0)
+    ).length;
+    const addOnCount = items.filter((i: any) => 
+      !i.item_name_snapshot?.startsWith('Bulk Pile') && 
+      !i.item_name?.startsWith('Bulk Pile') &&
+      !(
+        (i.service_type === 'Wash & Fold' || i.service_type === 'Wash & Iron') &&
+        (Number(i.total_price) === 0)
+      )
+    ).length;
+
+    return (hasBulkPile ? 1 : 0) + pileContentCount + addOnCount;
+  };
+
+  const handleWhatsAppShare = async () => {
+    if (!orderSuccess || !captureRef.current) return;
+    setIsCopying(true);
+
+    try {
+      let rawPhone = orderSuccess.customer_phone;
+      if (!rawPhone || rawPhone === 'Unknown') {
+         const cust = orderSuccess.customers;
+         if (Array.isArray(cust)) rawPhone = cust[0]?.phone;
+         else if (cust) rawPhone = cust.phone;
+      }
+
+      let phone = (rawPhone || '').replace(/\D/g, ''); 
+      if (phone.length < 10) {
+         alert("Invalid phone number.");
+         setIsCopying(false);
+         return;
+      }
+      if (phone.length === 10) phone = '91' + phone; 
+
+      const rowCount = calculateBillRows(orderSuccess);
+      const IS_LARGE_BILL = rowCount > 13;
+
+      let message = "";
+      
+      if (IS_LARGE_BILL) {
+        const origin = window.location.origin;
+        const billLink = `${origin}/bill/${orderSuccess.id}`;
+        message = `Hello ${orderSuccess.customer_name}, here is your bill link: ${billLink}`;
+        const waUrl = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+        window.open(waUrl, '_blank');
+      } else {
+        const blob = await toBlob(captureRef.current, { backgroundColor: '#ffffff', pixelRatio: 3 });
+        if (!blob) throw new Error("Failed to generate image");
+
+        try {
+          const data = [new ClipboardItem({ 'image/png': blob })];
+          await navigator.clipboard.write(data);
+          setTimeout(() => {
+             alert("✅ Bill Copied!\n\n1. WhatsApp is opening...\n2. Long Press > Paste in the chat.");
+          }, 300);
+        } catch (clipboardErr) {
+          console.error("Clipboard failed:", clipboardErr);
+          const link = document.createElement('a');
+          link.download = `Bill-${orderSuccess.readable_bill_id}.png`;
+          link.href = URL.createObjectURL(blob);
+          link.click();
+          alert("⚠️ Clipboard blocked. Bill downloaded instead.");
+        }
+
+        message = `Hello ${orderSuccess.customer_name}, here is your bill receipt.`;
+        const waUrl = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+        setTimeout(() => {
+          window.open(waUrl, '_blank');
+        }, 500);
+      }
+
+    } catch (err) {
+      console.error("Error sharing:", err);
+      alert("System Error. Please try printing.");
+    } finally {
+      setIsCopying(false);
+    }
+  };
 
   const form = useForm<CreateOrderInput>({
     resolver: zodResolver(createOrderSchema) as any,
@@ -162,11 +190,18 @@ export default function OrderWizard({
 
   const prevStep = () => setCurrentStep((prev) => Math.max(prev - 1, 0));
 
+  const handleCancel = () => {
+    if (confirm("Discard changes?")) {
+      router.push('/');
+    }
+  };
+
   const onSubmit: SubmitHandler<CreateOrderInput> = async (data) => {
     const action = isEditing ? "Update Order" : "Create Order";
     if(!confirm(`Confirm ${action}?`)) return;
     
     setIsSubmitting(true);
+    
     let result;
     
     if (isEditing && initialOrder?.id) {
@@ -176,46 +211,86 @@ export default function OrderWizard({
           setOrderSuccess(fullOrder);
        }
     } else {
-       result = await submitOrder(data, branchId); // Uses prop branchId
+       result = await submitOrder(data, branchId);
        if (result.success && result.orderId) {
           const fullOrder = await fetchOrderDetails(result.orderId);
           setOrderSuccess(fullOrder);
        }
     }
     
-    if (result?.error) alert(`Error: ${result.error}`);
-    setIsSubmitting(false);
+    if (result.error) {
+      alert(`Error: ${result.error}`);
+      setIsSubmitting(false);
+    } else {
+      setIsSubmitting(false);
+    }
   };
 
-  // --- Success View (Omitted for brevity, same as before) ---
   if (orderSuccess) {
-     // ... (Keep your existing Success UI code here) ...
-     // For this snippet, I'll assume the previous Success UI logic is preserved.
-     // If you need the full file again, I can provide it, but trying to keep this concise.
-     // Just copy-paste the `if (orderSuccess)` block from your existing file.
-     return (
-        <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center p-4">
-            <div className="bg-white rounded-3xl shadow-xl w-full max-w-lg p-8 text-center space-y-6">
-                <div className="mx-auto h-20 w-20 bg-green-100 rounded-full flex items-center justify-center text-green-600">
-                    <Check size={40} />
-                </div>
-                <h2 className="text-2xl font-bold text-slate-800">Order Saved Successfully!</h2>
-                <div className="flex gap-4 pt-4">
-                    <button onClick={() => router.push('/')} className="flex-1 bg-slate-100 py-3 rounded-xl font-bold text-slate-600">Home</button>
-                    <button onClick={() => handlePrint()} className="flex-1 bg-slate-900 py-3 rounded-xl font-bold text-white flex items-center justify-center gap-2"><Printer size={18}/> Print</button>
-                </div>
-                {/* Hidden Receipt for Print */}
-                <div className="hidden">
-                    <Receipt ref={receiptRef} order={orderSuccess} branch={orderSuccess.branch_data || branchData} staffName={staffName} />
-                </div>
-            </div>
+    const currentRowCount = orderSuccess ? calculateBillRows(orderSuccess) : 0;
+    const isLarge = currentRowCount > 13;
+
+    return (
+      <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center p-4">
+        <div className="bg-white rounded-3xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[95vh]">
+          
+          <div className="bg-green-50 p-6 flex flex-col items-center border-b border-green-100 shrink-0">
+             <div className="h-14 w-14 bg-green-100 rounded-full flex items-center justify-center text-green-600 mb-3">
+                <Check size={32} strokeWidth={3} />
+             </div>
+             <h2 className="text-xl font-bold text-slate-800">Order Saved!</h2>
+             <p className="text-sm text-slate-500">Bill #: {orderSuccess.readable_bill_id}</p>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-4 bg-slate-50/50 flex flex-col items-center relative">
+             <div className="shadow-lg transform scale-95 origin-top pointer-events-none">
+                <Receipt 
+                  ref={receiptRef} 
+                  order={orderSuccess} 
+                  branch={branchData}
+                  staffName={staffName} 
+                />
+             </div>
+             <div className="absolute top-0 left-0 -z-50 opacity-0 pointer-events-none w-[80mm]">
+                <Receipt 
+                  ref={captureRef} 
+                  order={orderSuccess} 
+                  branch={branchData} 
+                  staffName={staffName} 
+                />
+             </div>
+          </div>
+
+          <div className="p-4 border-t border-slate-100 bg-white grid grid-cols-2 gap-3 shrink-0">
+             <button 
+                onClick={handleWhatsAppShare}
+                disabled={isCopying}
+                className="col-span-2 flex items-center justify-center gap-2 py-4 bg-green-600 text-white font-bold rounded-xl hover:bg-green-700 transition-colors shadow-md shadow-green-200 active:scale-95"
+             >
+                {isCopying ? <Loader2 className="animate-spin" size={20} /> : (isLarge ? <Link2 size={20} /> : <Send size={20} />)} 
+                {isCopying ? "Processing..." : (isLarge ? "Share Bill Link (PDF)" : "Share Bill Image")}
+             </button>
+
+             <button 
+                onClick={() => handlePrint()}
+                className="flex items-center justify-center gap-2 py-3 bg-slate-900 text-white font-bold rounded-xl hover:bg-slate-800 transition-colors"
+             >
+                <Printer size={18} /> Print
+             </button>
+             <button 
+                onClick={() => router.push('/')}
+                className="flex items-center justify-center gap-2 py-3 bg-slate-100 text-slate-600 font-bold rounded-xl hover:bg-slate-200 transition-colors"
+             >
+                <Home size={18} /> Done
+             </button>
+          </div>
         </div>
-     )
+      </div>
+    );
   }
 
   return (
     <div className="flex flex-col h-full bg-slate-50 relative">
-      {/* Top Bar */}
       <div className="bg-white shadow-sm border-b border-slate-100 z-20">
         <div className="flex items-center justify-between px-6 py-4">
           <div>
@@ -224,24 +299,39 @@ export default function OrderWizard({
               {new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}
             </p>
           </div>
-          <button onClick={() => router.push('/')} className="h-10 w-10 rounded-full bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-400 hover:bg-red-50 hover:text-red-500 hover:border-red-100 active:scale-95 transition-all">
+          <button 
+            onClick={handleCancel}
+            className="h-10 w-10 rounded-full bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-400 hover:bg-red-50 hover:text-red-500 hover:border-red-100 active:scale-95 transition-all"
+          >
             <X size={20} />
           </button>
         </div>
 
-        {/* Stepper UI */}
         <div className="pb-4 pt-1">
           <div className="flex justify-center">
             <div className="relative flex items-center w-full max-w-xs justify-between px-4">
               <div className="absolute top-1/2 left-4 right-4 h-0.5 bg-slate-100 -z-10" />
-              <div className="absolute top-1/2 left-4 h-0.5 bg-blue-600 -z-10 transition-all duration-500 ease-out" style={{ width: `calc(${(currentStep / (STEPS.length - 1)) * 100}% - 32px)` }} />
-              {STEPS.map((step, idx) => (
-                <div key={idx} className="flex flex-col items-center gap-1.5 bg-white px-1">
-                  <div className={`h-9 w-9 rounded-full flex items-center justify-center transition-all duration-300 border-2 ${idx <= currentStep ? 'bg-blue-600 border-blue-600 text-white shadow-md shadow-blue-200 scale-110' : 'bg-white border-slate-200 text-slate-300'}`}>
-                    <step.icon size={16} strokeWidth={2.5} />
+              <div 
+                className="absolute top-1/2 left-4 h-0.5 bg-blue-600 -z-10 transition-all duration-500 ease-out" 
+                style={{ width: `calc(${(currentStep / (STEPS.length - 1)) * 100}% - 32px)` }}
+              />
+              {STEPS.map((step, idx) => {
+                const isActive = idx <= currentStep;
+                const StepIcon = step.icon;
+                return (
+                  <div key={idx} className="flex flex-col items-center gap-1.5 bg-white px-1">
+                    <div 
+                      className={`h-9 w-9 rounded-full flex items-center justify-center transition-all duration-300 border-2 ${
+                        isActive 
+                          ? 'bg-blue-600 border-blue-600 text-white shadow-md shadow-blue-200 scale-110' 
+                          : 'bg-white border-slate-200 text-slate-300'
+                      }`}
+                    >
+                      <StepIcon size={16} strokeWidth={2.5} />
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
           <div className="text-center mt-2">
@@ -250,43 +340,52 @@ export default function OrderWizard({
         </div>
       </div>
 
-      {/* Main Content Area */}
       <div className="flex-1 overflow-y-auto p-6 pb-32 scrollbar-hide">
-        
-        {/* Step 0: Customer (ALWAYS RENDERS INSTANTLY) */}
-        <div className={currentStep === 0 ? 'block' : 'hidden'}>
-           <CustomerStep form={form} />
-        </div>
-
-        {/* Steps 1, 2, 3: Wrapped in Suspense */}
-        {/* These steps need the heavy data. We wrap them so they show a spinner if data isn't ready when user clicks Next */}
-        {currentStep > 0 && (
-          <Suspense fallback={<StepLoading />}>
-             <StepsWithData 
-                promise={metaPromise} 
-                preloadedData={preloadedMeta}
-                step={currentStep}
-                form={form}
-             />
-          </Suspense>
+        {currentStep === 0 && <CustomerStep form={form} />}
+        {currentStep === 1 && (
+           <ItemsStep 
+              form={form} 
+              dbItems={dbItems} 
+              settings={settings} 
+              specialRates={specialRates}
+              initialItems={initialOrder?.items}
+           />
         )}
+        {currentStep === 2 && <DeliveryStep form={form} />}
+        {currentStep === 3 && <ReviewStep form={form} branchData={branchData} staffName={staffName} />}
       </div>
 
-      {/* Bottom Actions */}
       <div className="fixed bottom-0 left-0 right-0 bg-white p-4 border-t border-slate-100 flex gap-4 z-30 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
         {currentStep > 0 && (
-          <button type="button" onClick={prevStep} className="w-16 bg-slate-100 text-slate-600 font-bold py-4 rounded-2xl flex items-center justify-center active:scale-95 transition-transform hover:bg-slate-200">
+          <button 
+            type="button"
+            onClick={prevStep}
+            className="w-16 bg-slate-100 text-slate-600 font-bold py-4 rounded-2xl flex items-center justify-center active:scale-95 transition-transform hover:bg-slate-200"
+          >
             <ChevronLeft size={24} />
           </button>
         )}
         
         {currentStep < STEPS.length - 1 ? (
-          <button type="button" onClick={nextStep} className="flex-1 bg-blue-600 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-blue-200 active:scale-95 transition-transform hover:bg-blue-700">
+          <button 
+            type="button"
+            onClick={nextStep}
+            className="flex-1 bg-blue-600 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-blue-200 active:scale-95 transition-transform hover:bg-blue-700"
+          >
             Next Step <ChevronRight size={20} />
           </button>
         ) : (
-          <button type="button" onClick={handleSubmit(onSubmit)} disabled={isSubmitting} className="flex-1 bg-green-600 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-green-200 active:scale-95 transition-transform disabled:opacity-70 disabled:cursor-not-allowed hover:bg-green-700">
-            {isSubmitting ? <Loader2 className="animate-spin" size={20}/> : <>{isEditing ? 'Update Order' : 'Create & Save'} <Check size={20} /></>}
+          <button 
+            type="button"
+            onClick={handleSubmit(onSubmit)}
+            disabled={isSubmitting}
+            className="flex-1 bg-green-600 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-green-200 active:scale-95 transition-transform disabled:opacity-70 disabled:cursor-not-allowed hover:bg-green-700"
+          >
+            {isSubmitting ? (
+                <>Saving... <Loader2 className="animate-spin" size={20}/></>
+            ) : (
+                <>{isEditing ? 'Update Order' : 'Create & Save'} <Check size={20} /></>
+            )}
           </button>
         )}
       </div>
