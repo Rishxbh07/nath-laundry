@@ -144,7 +144,7 @@ export default function TermsPage() {
 
           <div className="space-y-8">
             <p className="text-sm text-slate-600 bg-indigo-50 p-4 rounded-xl border border-indigo-100">
-              This section applies to the Laundry Business (“Client”) using the Nath Laundry Billing & Management Platform available at <span className="font-bold text-indigo-700">nath-laundry.vercel.app</span>.
+              This section applies to the Laundry Business (“Client”) using the Nath Drycleaner Billing & Management Platform available at <span className="font-bold text-indigo-700">nath-laundry.vercel.app</span>.
             </p>
 
             <RuleBlock number="1" title="Nature of Service">

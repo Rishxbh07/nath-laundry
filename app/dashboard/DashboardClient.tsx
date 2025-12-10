@@ -5,7 +5,7 @@ import {
   Calendar, IndianRupee, AlertCircle, 
   TrendingUp, TrendingDown, Scale, Shirt, Loader2, RefreshCcw 
 } from 'lucide-react';
-import { getDashboardStats, getTopServices, DateRange, DashboardStats } from './actions';
+import { getDashboardStats, getPopularStats, DateRange, DashboardStats, PopularData } from './actions';
 import TopServices from '../components/TopServices';
 
 interface Props {
@@ -16,16 +16,24 @@ export default function DashboardClient({ branchId }: Props) {
   const [filter, setFilter] = useState<DateRange>('TODAY');
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<DashboardStats | null>(null);
-  const [topItems, setTopItems] = useState<any[]>([]);
+  
+  // Initialize with empty structure to prevent crash on first render
+  const [popularData, setPopularData] = useState<PopularData>({
+    standard: [],
+    custom: [],
+    modes: { pickup: 0, delivery: 0 }
+  });
 
   const fetchData = useCallback(async () => {
     setLoading(true);
-    const [statsData, servicesData] = await Promise.all([
+    // Fetch General Stats AND Popular Stats in parallel
+    const [statsData, popularRes] = await Promise.all([
       getDashboardStats(branchId, filter),
-      getTopServices(branchId)
+      getPopularStats(branchId) // New function call
     ]);
+    
     setStats(statsData);
-    setTopItems(servicesData);
+    setPopularData(popularRes);
     setLoading(false);
   }, [branchId, filter]);
 
@@ -80,7 +88,7 @@ export default function DashboardClient({ branchId }: Props) {
       {/* 1. Primary Stats Grid */}
       <div className="grid grid-cols-2 gap-4">
         
-        {/* Earnings Card (With Integrated Growth) */}
+        {/* Earnings Card */}
         <div className="bg-white p-5 rounded-3xl border border-emerald-100 shadow-sm relative overflow-hidden group">
           <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity"><IndianRupee size={80} /></div>
           
@@ -189,8 +197,8 @@ export default function DashboardClient({ branchId }: Props) {
         </div>
       </div>
 
-      {/* 4. Top Services List */}
-      <TopServices data={topItems} />
+      {/* 4. Popular Items & Modes (Updated Component) */}
+      <TopServices data={popularData} />
 
     </div>
   );

@@ -1,9 +1,14 @@
-// File: app/actions/order.ts
 'use server'
 
 import { createClient } from '@/app/utils/supabase/server'
 import { CreateOrderInput } from '@/app/lib/schemas/order'
 import { revalidatePath } from 'next/cache'
+
+// --- Helper: Calculate Total Weight ---
+function calculateTotalWeight(items: any[]): number {
+  // Sums up weight of all items (Bulk Pile weight + individual special item weights)
+  return items.reduce((sum, item) => sum + (Number(item.weight) || 0), 0);
+}
 
 // --- 1. Fetch Meta (Used in Wizard) ---
 export async function fetchLaundryMeta() {
@@ -48,7 +53,7 @@ export async function fetchCustomerHistory(phone: string) {
 
   if (!customer) return [];
 
-  // 2. Fetch Last 3 Orders with Items (for weight sum)
+  // 2. Fetch Last 3 Orders (Now using order.total_weight instead of joining items)
   const { data: orders } = await supabase
     .from('orders')
     .select(`
@@ -57,27 +62,23 @@ export async function fetchCustomerHistory(phone: string) {
       created_at,
       final_amount,
       total_piece_count,
-      order_items ( weight_kg )
+      total_weight
     `)
     .eq('customer_id', customer.id)
-    .neq('status', 'CANCELLED') // Optional: Exclude cancelled
+    .neq('status', 'CANCELLED') 
     .order('created_at', { ascending: false })
     .limit(3);
 
   if (!orders) return [];
 
-  // 3. Transform and Calculate Totals
-  return orders.map((o: any) => {
-    const totalWeight = o.order_items?.reduce((sum: number, i: any) => sum + (i.weight_kg || 0), 0) || 0;
-    return {
-      id: o.id,
-      billId: o.readable_bill_id,
-      date: o.created_at,
-      amount: o.final_amount,
-      pcs: o.total_piece_count,
-      weight: parseFloat(totalWeight.toFixed(2))
-    };
-  });
+  return orders.map((o: any) => ({
+    id: o.id,
+    billId: o.readable_bill_id,
+    date: o.created_at,
+    amount: o.final_amount,
+    pcs: o.total_piece_count,
+    weight: parseFloat(Number(o.total_weight || 0).toFixed(2))
+  }));
 }
 
 // --- 2. Customer Search ---
@@ -104,6 +105,9 @@ export async function submitOrder(data: CreateOrderInput, branchId: string) {
   const finalDueDate = new Date(combinedDateTime).toISOString();
   const isPaidOnCreation = data.payment_status === 'PAID';
   
+  // Calculate Total Weight for the Order Table
+  const totalWeight = calculateTotalWeight(data.items);
+
   const orderPayload = {
     delivery_mode: data.delivery_mode,
     due_date: finalDueDate, 
@@ -113,6 +117,7 @@ export async function submitOrder(data: CreateOrderInput, branchId: string) {
     payment_status: data.payment_status,
     payment_method: isPaidOnCreation ? data.payment_method : null,
     total_piece_count: data.total_item_count,
+    total_weight: totalWeight, // <-- Added Here
     created_by: user.id,
     closed_by: isPaidOnCreation ? user.id : null,
     completed_at: isPaidOnCreation ? new Date().toISOString() : null,
@@ -120,10 +125,12 @@ export async function submitOrder(data: CreateOrderInput, branchId: string) {
     status: isPaidOnCreation ? 'DELIVERED' : 'RECEIVED'
   };
 
+  // Fix: Map 'weight' (form) to 'weight_kg' (db)
   const formattedItems = data.items.map(item => ({
     ...item,
     item_id: item.item_id || null, 
-    item_name_snapshot: item.item_name 
+    item_name_snapshot: item.item_name,
+    weight_kg: item.weight || 0 // <-- Added Mapping
   }));
 
   const { data: orderId, error } = await supabase.rpc('create_full_order', {
@@ -144,7 +151,7 @@ export async function submitOrder(data: CreateOrderInput, branchId: string) {
   return { success: true, orderId };
 }
 
-// --- 4. Update Existing Order (EDIT) - FIXED ---
+// --- 4. Update Existing Order (EDIT) ---
 export async function updateOrder(orderId: string, data: CreateOrderInput) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -153,9 +160,11 @@ export async function updateOrder(orderId: string, data: CreateOrderInput) {
   const totalAmount = data.items.reduce((sum, item) => sum + item.total_price, 0);
   const finalAmount = Math.max(0, totalAmount - (data.discount_amount || 0));
   const combinedDateTime = `${data.due_date}T${data.due_time}:00`;
+  
+  // Calculate Total Weight
+  const totalWeight = calculateTotalWeight(data.items);
 
-  // A. Handle Customer Update First (Because 'orders' table doesn't have address/name columns)
-  // We upsert the customer based on phone number to ensure we have the correct ID and updated details
+  // A. Handle Customer Update First
   const { data: customerData, error: customerError } = await supabase
     .from('customers')
     .upsert({ 
@@ -171,11 +180,11 @@ export async function updateOrder(orderId: string, data: CreateOrderInput) {
     return { error: "Failed to update customer details" };
   }
 
-  // B. Update Order Details (Linking to the correct Customer ID)
+  // B. Update Order Details
   const { error: orderError } = await supabase
     .from('orders')
     .update({
-      customer_id: customerData.id, // Link to the customer we just updated
+      customer_id: customerData.id,
       delivery_mode: data.delivery_mode,
       due_date: new Date(combinedDateTime).toISOString(),
       discount_amount: data.discount_amount,
@@ -184,6 +193,7 @@ export async function updateOrder(orderId: string, data: CreateOrderInput) {
       payment_status: data.payment_status,
       payment_method: data.payment_method || null,
       total_piece_count: data.total_item_count,
+      total_weight: totalWeight, // <-- Updated Here
       completed_at: data.payment_status === 'PAID' ? new Date().toISOString() : null,
       status: data.payment_status === 'PAID' ? 'DELIVERED' : 'RECEIVED', 
       bill_status: data.payment_status === 'PAID' ? 'CLOSED' : 'OPEN'
@@ -192,7 +202,7 @@ export async function updateOrder(orderId: string, data: CreateOrderInput) {
 
   if (orderError) return { error: orderError.message };
 
-  // C. Replace Items (Delete All -> Insert New)
+  // C. Replace Items
   const { error: deleteError } = await supabase
     .from('order_items')
     .delete()
@@ -206,7 +216,7 @@ export async function updateOrder(orderId: string, data: CreateOrderInput) {
     item_name_snapshot: item.item_name,
     service_type: item.service_type,
     quantity: item.quantity,
-    weight_kg: item.weight || 0,
+    weight_kg: item.weight || 0, // <-- Mapping Confirmed
     unit_price: item.unit_price,
     total_price: item.total_price,
     is_chargeable: !item.is_base_charge
@@ -254,7 +264,6 @@ export async function fetchOrderDetails(orderId: string) {
 
   return {
     ...data,
-    // Fallback logic to get customer details from the joined table
     customer_name: data.customers?.name || 'Unknown',
     customer_phone: data.customers?.phone || 'Unknown',
     customer_address: data.customers?.address || '',
