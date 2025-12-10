@@ -1,4 +1,3 @@
-// File: app/orders/steps/items/useOrderCalculator.ts
 import { useEffect } from 'react';
 import { UseFormReturn, useFieldArray } from 'react-hook-form';
 import { CreateOrderInput } from '@/app/lib/schemas/order';
@@ -59,34 +58,43 @@ export function useOrderCalculator({
       let price = 0;
       let serviceLabel = entry.service_type;
       
-      // Check flags
       const isManual = entry.item.kind === 'MANUAL';
-      const isSpecialKind = entry.item.kind === 'SPECIAL';
-
-      // --- Helper to find specific rates ---
+      
+      // Helper to find specific rates
       const getSpecialRate = (sType: string) => {
         return specialRates.find(
           r => r.item_id === entry.item.id && r.service_type === sType
         )?.rate_value;
       };
 
-      // --- Logic 0: Manual / Custom Item (Highest Priority) ---
+      // --- Logic 0: Manual Item ---
       if (isManual) {
         price = Number(entry.manual_rate || 0);
-        // serviceLabel is already set to 'Custom' or user input
       }
 
       // --- Logic A: Standard Service ---
       else if (entry.service_type === 'Standard') {
-        if (isSpecialKind) {
-          const customRate = getSpecialRate('Standard') || getSpecialRate('Wash');
-          price = Number(customRate || 50); 
+        // BUG FIX: Check for explicit Special Rate FIRST (e.g. Bedsheet 30/pc)
+        const explicitRate = getSpecialRate('Standard') || getSpecialRate('Wash');
+
+        if (explicitRate !== undefined) {
+           // If DB has a rate, use it (even if inside a bulk pile)
+           price = Number(explicitRate);
+           serviceLabel = 'Special Wash'; 
+        } 
+        else if (entry.item.kind === 'SPECIAL') {
+          // Fallback for items marked SPECIAL but missing specific rate
+          price = 50; 
           serviceLabel = 'Special Wash';
-        } else if (bulkWeight === 0 && entry.item.default_unit === 'PIECE') {
+        } 
+        else if (bulkWeight === 0 && entry.item.default_unit === 'PIECE') {
+          // Small order mode (no bulk weight)
           price = RATES.small_piece;
           serviceLabel = 'Piece Wash';
-        } else {
-          price = 0; // In Bulk Pile
+        } 
+        else {
+          // Standard item inside a Bulk Order -> Free (included in weight)
+          price = 0; 
           serviceLabel = bulkService; 
         }
       }
@@ -103,26 +111,36 @@ export function useOrderCalculator({
          price = Number(customRate || RATES.dry_clean_default);
       }
 
-      // --- Logic D: Weight Based Specials Override ---
+      // --- Logic D: Weight Based Specials (Blankets/Curtains) ---
+      // Only applies if unit=KG and it's not a manual/custom item
       if (!isManual && entry.item.default_unit === 'KG') {
-         const w = entry.weight || 0;
-         if (w <= RATES.blanket_threshold) {
-            price = RATES.blanket_flat;
-         } else {
-            price = Math.round(w * RATES.blanket_kg);
+         // If we haven't already found a special price (like a fixed price for curtains)
+         if (price === 0 || price === 50) { 
+            const w = entry.weight || 0;
+            if (w <= RATES.blanket_threshold) {
+                price = RATES.blanket_flat;
+            } else {
+                price = Math.round(w * RATES.blanket_kg);
+            }
+            serviceLabel = 'Heavy Wash';
          }
-         serviceLabel = 'Heavy Wash';
       }
 
       // 3. Push Calculated Item
       finalBillItems.push({
-        item_id: isManual ? null : entry.item.id, // Ensure NULL ID for custom items
+        item_id: isManual ? null : entry.item.id,
         item_name: entry.item.name,
         service_type: serviceLabel,
         quantity: entry.quantity,
         weight: entry.weight,
         unit_price: price,
-        total_price: price * (entry.item.default_unit === 'KG' ? (entry.weight || 1) : entry.quantity)
+        // For KG items calculated in Logic D, price is usually the *Total* Flat Price,
+        // so we don't multiply by weight again unless it was a rate-per-kg scenario.
+        // Assuming Logic D sets the final "unit_price" as the cost for that item:
+        total_price: (entry.item.default_unit === 'KG' && !isManual) 
+          ? price 
+          : price * entry.quantity,
+        is_chargeable: !entry.is_base_charge
       });
     });
 

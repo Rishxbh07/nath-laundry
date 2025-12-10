@@ -1,8 +1,8 @@
-// File: app/components/HomeOrderLists.tsx
 'use client';
 
 import React, { useState } from 'react';
-import { Phone, MessageCircle, Truck, Store, AlertCircle } from 'lucide-react';
+import { Phone, MessageCircle, Truck, Store, AlertCircle, SquareActivity, Clock } from 'lucide-react';
+import Link from 'next/link';
 
 interface OrderItem {
   id: string;
@@ -11,6 +11,7 @@ interface OrderItem {
   amount_paid: number;
   payment_status: string;
   delivery_mode: 'PICKUP' | 'DELIVERY';
+  due_date: string; // Ensure this is selected in your server action
   customers: {
     name: string;
     phone: string;
@@ -28,49 +29,53 @@ interface HomeOrderListsProps {
 export default function HomeOrderLists({ data }: HomeOrderListsProps) {
   const [activeTab, setActiveTab] = useState<'OVERDUE' | 'DELIVERY' | 'PICKUP'>('OVERDUE');
 
-  // Helper to switch between lists
+  // Helper: Calculate days overdue
+  const getDaysOverdue = (dateStr: string) => {
+    const due = new Date(dateStr);
+    const today = new Date();
+    // Reset time to midnight for accurate day diff
+    due.setHours(0,0,0,0);
+    today.setHours(0,0,0,0);
+    
+    const diffTime = Math.abs(today.getTime() - due.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+    return diffDays;
+  };
+
   const getList = () => {
     switch (activeTab) {
       case 'DELIVERY': return data.dueDelivery;
       case 'PICKUP': return data.duePickup;
-      default: return data.overdue;
+      default: 
+        // Sort overdue: Oldest due date first (Most delayed)
+        return [...data.overdue].sort((a, b) => new Date(a.due_date).getTime() - new Date(b.due_date).getTime());
     }
   };
 
   const list = getList();
 
-  // --- ACTIONS ---
-
   const handleWhatsApp = (order: OrderItem) => {
-    // 1. Sanitize Phone Number (remove spaces, dashes, +91, etc.)
     const rawPhone = order.customers?.phone || '';
     let phone = rawPhone.replace(/\D/g, ''); 
 
-    // 2. Validation & Formatting
     if (!phone || phone.length < 10) {
       alert(`Invalid or missing phone number for ${order.customers.name}`);
       return;
     }
+    if (phone.length === 10) phone = '91' + phone;
 
-    // Add India code if missing (assuming 10 digit numbers are local)
-    if (phone.length === 10) {
-      phone = '91' + phone;
-    }
-
-    // 3. Construct Message
     const pending = order.final_amount - order.amount_paid;
-    const isPaid = order.payment_status === 'PAID';
     
     let text = '';
     if (activeTab === 'OVERDUE') {
-       text = `Hello ${order.customers.name}, your laundry bill *${order.readable_bill_id}* is overdue. Pending: ₹${pending}. Please pay & collect.`;
+       const days = getDaysOverdue(order.due_date);
+       text = `Hello ${order.customers.name}, your laundry bill *${order.readable_bill_id}* is overdue by ${days} days. Pending Amount: ₹${pending}. Please pay & collect.`;
     } else if (order.delivery_mode === 'DELIVERY') {
        text = `Hello ${order.customers.name}, your order *${order.readable_bill_id}* is out for delivery today. Total: ₹${order.final_amount}.`;
     } else {
        text = `Hello ${order.customers.name}, your order *${order.readable_bill_id}* is ready for pickup today.`;
     }
 
-    // 4. Open WhatsApp
     window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, '_blank');
   };
 
@@ -129,6 +134,7 @@ export default function HomeOrderLists({ data }: HomeOrderListsProps) {
           list.map((order) => {
             const pendingAmount = order.final_amount - order.amount_paid;
             const isPaid = order.payment_status === 'PAID';
+            const overdueDays = activeTab === 'OVERDUE' ? getDaysOverdue(order.due_date) : 0;
 
             return (
               <div key={order.id} className="p-4 hover:bg-slate-50 transition-colors group">
@@ -141,14 +147,11 @@ export default function HomeOrderLists({ data }: HomeOrderListsProps) {
                       <span className="text-[10px] font-mono font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
                         {order.readable_bill_id}
                       </span>
+                      
+                      {/* Overdue Badge */}
                       {activeTab === 'OVERDUE' && (
-                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border uppercase flex items-center gap-1 ${
-                          order.delivery_mode === 'DELIVERY' 
-                            ? 'text-blue-600 border-blue-100 bg-blue-50' 
-                            : 'text-orange-600 border-orange-100 bg-orange-50'
-                        }`}>
-                          {order.delivery_mode === 'DELIVERY' ? <Truck size={8} /> : <Store size={8} />}
-                          {order.delivery_mode}
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded border uppercase flex items-center gap-1 text-red-600 border-red-100 bg-red-50">
+                          <Clock size={10} /> {overdueDays} Day{overdueDays !== 1 ? 's' : ''} Late
                         </span>
                       )}
                     </div>
@@ -159,27 +162,44 @@ export default function HomeOrderLists({ data }: HomeOrderListsProps) {
                       {isPaid ? (
                         <span className="text-green-600 flex items-center gap-1 justify-end">PAID</span>
                       ) : (
-                        <span className="text-red-600">Due: ₹{pendingAmount}</span>
+                        <span className="text-red-600">Due Amount: ₹{pendingAmount}</span>
                       )}
                     </p>
-                    <p className="text-[10px] text-slate-400 mt-0.5 font-mono">{order.customers.phone || 'No Phone'}</p>
+                    
+                    {/* Conditionally show Phone OR Overdue Text */}
+                    {activeTab === 'OVERDUE' ? (
+                       <p className="text-[9px] text-red-400 mt-0.5 font-bold">
+                         Overdue by {overdueDays} day{overdueDays !== 1 ? 's' : ''}
+                       </p>
+                    ) : (
+                       <p className="text-[10px] text-slate-400 mt-0.5 font-mono">{order.customers.phone || 'No Phone'}</p>
+                    )}
                   </div>
                 </div>
 
-                {/* Action Buttons */}
+                {/* Action Buttons Row */}
                 <div className="flex gap-2 mt-3 opacity-90 group-hover:opacity-100 transition-opacity">
                   <a 
                     href={`tel:${order.customers.phone}`}
-                    className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 py-2.5 rounded-xl flex items-center justify-center gap-2 text-xs font-bold transition-colors active:scale-95"
+                    className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 py-2 rounded-xl flex items-center justify-center gap-1 text-[10px] font-bold transition-colors active:scale-95"
                   >
-                    <Phone size={14} /> Call
+                    <Phone size={12} /> Call
                   </a>
                   <button 
                     onClick={() => handleWhatsApp(order)}
-                    className="flex-1 bg-green-50 hover:bg-green-100 text-green-700 py-2.5 rounded-xl flex items-center justify-center gap-2 text-xs font-bold transition-colors border border-green-100 active:scale-95"
+                    className="flex-1 bg-green-50 hover:bg-green-100 text-green-700 py-2 rounded-xl flex items-center justify-center gap-1 text-[10px] font-bold transition-colors border border-green-100 active:scale-95"
                   >
-                    <MessageCircle size={14} /> WhatsApp
+                    <MessageCircle size={12} /> WhatsApp
                   </button>
+                  
+                  {/* Manage Button */}
+                  <Link
+                    href={`/scan?id=${order.id}`}
+                    className="flex-none w-14 bg-slate-800 text-white hover:bg-slate-900 rounded-xl flex items-center justify-center transition-colors active:scale-95 shadow-md"
+                    title="Manage Handover"
+                  >
+                    <SquareActivity size={16} />
+                  </Link>
                 </div>
               </div>
             );

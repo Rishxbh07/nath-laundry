@@ -1,13 +1,13 @@
-// File: app/scan/page.tsx
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { X, CheckCircle2, AlertCircle, Banknote, Truck, Loader2, Shirt, UserCheck, Calendar } from 'lucide-react';
 import { fetchOrderDetails } from '@/app/actions/order';
 import { deliverBill } from '../utils/billActions';
 import dynamic from 'next/dynamic';
 
+// Dynamic import for Scanner
 const Scanner = dynamic(
   () => import('@yudiel/react-qr-scanner').then((mod) => mod.Scanner),
   { 
@@ -23,17 +23,45 @@ const Scanner = dynamic(
 
 export default function ScanPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const queryId = searchParams.get('id');
+
   const [scannedData, setScannedData] = useState<any>(null);
   const [error, setError] = useState('');
   const [processing, setProcessing] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
   const [mounted, setMounted] = useState(false);
+  
+  // Controls if camera is active. Defaults to FALSE if ID is present.
+  const [isCameraActive, setIsCameraActive] = useState(!queryId);
 
   useEffect(() => {
     setMounted(true);
-  }, []);
+    if (queryId) {
+      handleManualFetch(queryId);
+    }
+  }, [queryId]);
+
+  const handleManualFetch = async (id: string) => {
+    setProcessing(true);
+    // Ensure camera is off if we are fetching manually
+    setIsCameraActive(false); 
+    
+    try {
+      const order = await fetchOrderDetails(id);
+      if (!order) {
+        setError("Order not found");
+      } else {
+        setScannedData(order);
+      }
+    } catch (e) {
+      setError("Failed to load order");
+    }
+    setProcessing(false);
+  };
 
   const handleScan = async (detectedCodes: any[]) => {
+    // Prevent multiple scans
     if (scannedData || processing) return;
 
     const rawValue = detectedCodes[0]?.rawValue;
@@ -42,21 +70,14 @@ export default function ScanPage() {
     try {
       const parsed = JSON.parse(rawValue);
       if (!parsed.id) throw new Error("Invalid QR Code");
-
-      setProcessing(true); 
       
-      // Fetch freshly revalidated data
-      const order = await fetchOrderDetails(parsed.id);
+      // 1. STOP CAMERA IMMEDIATELY upon successful read
+      setIsCameraActive(false);
       
-      if (!order) {
-        setError("Order not found");
-        setTimeout(() => setError(''), 3000);
-      } else {
-        setScannedData(order); 
-      }
-      setProcessing(false);
+      // 2. Then fetch data
+      await handleManualFetch(parsed.id);
     } catch (e) {
-      // Ignore invalid JSON scans
+      // Ignore invalid JSON scans, keep camera open
     }
   };
 
@@ -69,12 +90,11 @@ export default function ScanPage() {
     if (result.success) {
       setSuccessMsg("Bill Closed & Delivered Successfully! ✅");
       
-      // Optimistic update
       setScannedData((prev: any) => ({
         ...prev,
         bill_status: 'CLOSED',
         payment_status: 'PAID',
-        status: 'DELIVERED', // Force status update
+        status: 'DELIVERED',
         is_open: false,
         completed_at: new Date().toISOString()
       }));
@@ -88,8 +108,6 @@ export default function ScanPage() {
 
   if (!mounted) return <div className="min-h-screen bg-black" />;
 
-  // --- ROBUST CLOSURE CHECK ---
-  // We check ALL flags. If ANY of these are true, we treat the bill as closed.
   const isClosed = 
     scannedData?.bill_status === 'CLOSED' || 
     scannedData?.bill_status === 'ARCHIVED' || 
@@ -101,7 +119,9 @@ export default function ScanPage() {
       
       {/* Top Bar */}
       <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-center z-20 bg-linear-to-b from-black/80 to-transparent">
-        <h1 className="text-lg font-bold">Scan Bill QR</h1>
+        <h1 className="text-lg font-bold">
+          {scannedData ? 'Manage Order' : 'Scan Bill QR'}
+        </h1>
         <button onClick={() => router.back()} className="p-2 bg-white/10 rounded-full hover:bg-white/20 active:scale-95 transition-all">
           <X size={24} />
         </button>
@@ -109,6 +129,7 @@ export default function ScanPage() {
 
       <div className="flex-1 flex flex-col items-center justify-center relative bg-gray-900">
         
+        {/* State 1: Success Message */}
         {successMsg ? (
           <div className="text-center space-y-4 animate-in zoom-in duration-300 p-8 z-30">
             <div className="h-24 w-24 bg-green-500 rounded-full flex items-center justify-center mx-auto text-black shadow-lg shadow-green-500/50">
@@ -119,7 +140,7 @@ export default function ScanPage() {
           </div>
         ) : scannedData ? (
           
-          /* --- ORDER DETAILS CARD --- */
+          /* State 2: Order Details (Camera is OFF here) */
           <div className="w-full h-full bg-slate-100 text-slate-800 flex flex-col animate-in slide-in-from-bottom duration-300 pt-16 rounded-t-3xl overflow-hidden shadow-2xl">
             
             {/* Header Section */}
@@ -196,17 +217,15 @@ export default function ScanPage() {
               ))}
             </div>
 
-            {/* 3. Action Footer (Conditional) */}
+            {/* Footer Actions */}
             <div className="p-5 bg-white border-t border-slate-200 shrink-0 pb-8 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-20">
-              
               {isClosed ? (
-                 /* CLOSED STATE: Show Info Card Only */
                  <div className="bg-gray-800 p-4 rounded-2xl flex flex-col items-center justify-center gap-2 text-center text-white shadow-xl shadow-gray-400/20">
                     <div className="flex items-center gap-2 font-bold text-lg text-green-400">
                        <CheckCircle2 size={24} /> Bill is Closed
                     </div>
                     <p className="text-gray-400 text-xs px-4">
-                      This order has already been delivered and paid for. No further actions available.
+                      This order has already been delivered.
                     </p>
                     <button 
                       onClick={() => router.push('/')}
@@ -216,7 +235,6 @@ export default function ScanPage() {
                     </button>
                  </div>
               ) : (
-                 /* OPEN STATE: Show Actions */
                  <>
                     <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 mb-4 flex items-center justify-center">
                         {scannedData.payment_status === 'PAID' ? (
@@ -249,24 +267,27 @@ export default function ScanPage() {
           </div>
 
         ) : (
-          /* --- SCANNER VIEW --- */
+          /* State 3: Camera Scanning (Active only if isCameraActive is true) */
           <div className="w-full h-full absolute inset-0 bg-black">
-            <Scanner 
-              onScan={handleScan}
-              styles={{ container: { width: '100%', height: '100%' } }}
-              components={{ finder: true }} 
-            />
-            <div className="absolute bottom-24 left-0 right-0 text-center pointer-events-none z-10 px-6">
-              <p className="text-sm font-medium bg-black/60 text-white/90 inline-block px-6 py-3 rounded-full backdrop-blur-md border border-white/10 shadow-lg">
-                Scan Customer Bill QR
-              </p>
-            </div>
-            
-            {processing && !scannedData && (
-               <div className="absolute inset-0 flex items-center justify-center bg-black/80 backdrop-blur-sm z-20 flex-col gap-3">
-                  <Loader2 className="animate-spin text-white" size={48} />
-                  <p className="text-white font-bold text-sm tracking-widest uppercase">Verifying...</p>
-               </div>
+            {isCameraActive ? (
+              <>
+                <Scanner 
+                  onScan={handleScan}
+                  styles={{ container: { width: '100%', height: '100%' } }}
+                  components={{ finder: true }} 
+                />
+                <div className="absolute bottom-24 left-0 right-0 text-center pointer-events-none z-10 px-6">
+                  <p className="text-sm font-medium bg-black/60 text-white/90 inline-block px-6 py-3 rounded-full backdrop-blur-md border border-white/10 shadow-lg">
+                    Scan Customer Bill QR
+                  </p>
+                </div>
+              </>
+            ) : (
+              // Loading State (Camera off, waiting for data)
+              <div className="absolute inset-0 flex items-center justify-center bg-black/80 z-20 flex-col gap-3">
+                 <Loader2 className="animate-spin text-white" size={48} />
+                 <p className="text-white font-bold text-sm tracking-widest uppercase">Fetching Details...</p>
+              </div>
             )}
           </div>
         )}

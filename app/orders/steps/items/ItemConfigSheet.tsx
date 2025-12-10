@@ -9,9 +9,14 @@ interface ItemConfigProps {
 }
 
 export default function ItemConfigSheet({ item, bulkService, onClose, onConfirm }: ItemConfigProps) {
+  // 1. Detect if this is an "Ethnic" item (Case insensitive check)
+  const isEthnic = item.category?.toLowerCase() === 'ethnic';
+
   const [qty, setQty] = useState(1);
   const [weight, setWeight] = useState(0);
-  const [service, setService] = useState('Standard');
+  
+  // 2. Auto-select 'Dry Clean' for Ethnic items, otherwise default to 'Standard'
+  const [service, setService] = useState(isEthnic ? 'Dry Clean' : 'Standard');
 
   const handleConfirm = () => {
     onConfirm({ qty, weight, service });
@@ -68,30 +73,44 @@ export default function ItemConfigSheet({ item, bulkService, onClose, onConfirm 
           <div>
             <label className="text-xs font-bold text-slate-400 uppercase">Service Type</label>
             <div className="grid grid-cols-2 gap-2 mt-2">
-              <button 
-                onClick={() => setService('Standard')}
-                className={`p-3 rounded-xl text-xs font-bold border transition-all ${service === 'Standard' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white border-slate-200 text-slate-500'}`}
-              >
-                Standard
-                <span className="block text-[9px] opacity-70 font-normal mt-0.5">Inherits Bulk ({bulkService})</span>
-              </button>
               
-              {item.default_unit === 'PIECE' && (
-                <button 
-                  onClick={() => setService('Iron Only')}
-                  className={`p-3 rounded-xl text-xs font-bold border transition-all ${service === 'Iron Only' ? 'bg-orange-500 text-white border-orange-500' : 'bg-white border-slate-200 text-slate-500'}`}
-                >
-                  Iron Only
-                  <span className="block text-[9px] opacity-70 font-normal mt-0.5">Add-on Charge</span>
-                </button>
+              {/* Only show Standard/Iron if NOT Ethnic */}
+              {!isEthnic && (
+                <>
+                  <button 
+                    onClick={() => setService('Standard')}
+                    className={`p-3 rounded-xl text-xs font-bold border transition-all ${service === 'Standard' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white border-slate-200 text-slate-500'}`}
+                  >
+                    Standard
+                    <span className="block text-[9px] opacity-70 font-normal mt-0.5">Inherits Bulk ({bulkService})</span>
+                  </button>
+                  
+                  {item.default_unit === 'PIECE' && (
+                    <button 
+                      onClick={() => setService('Iron Only')}
+                      className={`p-3 rounded-xl text-xs font-bold border transition-all ${service === 'Iron Only' ? 'bg-orange-500 text-white border-orange-500' : 'bg-white border-slate-200 text-slate-500'}`}
+                    >
+                      Iron Only
+                      <span className="block text-[9px] opacity-70 font-normal mt-0.5">Add-on Charge</span>
+                    </button>
+                  )}
+                </>
               )}
 
+              {/* Dry Clean Button - Full width if Ethnic */}
               <button 
                 onClick={() => setService('Dry Clean')}
-                className={`p-3 rounded-xl text-xs font-bold border transition-all ${service === 'Dry Clean' ? 'bg-purple-600 text-white border-purple-600' : 'bg-white border-slate-200 text-slate-500'}`}
+                className={`p-3 rounded-xl text-xs font-bold border transition-all ${
+                  // Logic: If Ethnic, force selection visual + span full width
+                  isEthnic 
+                    ? 'col-span-2 bg-purple-600 text-white border-purple-600 ring-2 ring-purple-200' 
+                    : service === 'Dry Clean' ? 'bg-purple-600 text-white border-purple-600' : 'bg-white border-slate-200 text-slate-500'
+                }`}
               >
                 Dry Clean
-                <span className="block text-[9px] opacity-70 font-normal mt-0.5">Separate Bill</span>
+                <span className="block text-[9px] opacity-70 font-normal mt-0.5">
+                  {isEthnic ? 'Only Option for Ethnic' : 'Separate Bill'}
+                </span>
               </button>
             </div>
           </div>
