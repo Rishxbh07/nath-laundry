@@ -112,6 +112,7 @@ CREATE TABLE public.orders (
   closed_by uuid,
   bill_status USER-DEFINED NOT NULL DEFAULT 'OPEN'::bill_status_type,
   total_piece_count integer DEFAULT 0,
+  total_weight numeric DEFAULT 0,
   CONSTRAINT orders_pkey PRIMARY KEY (id),
   CONSTRAINT orders_branch_id_fkey FOREIGN KEY (branch_id) REFERENCES public.branches(id),
   CONSTRAINT orders_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.customers(id),
