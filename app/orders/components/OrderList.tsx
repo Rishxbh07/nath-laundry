@@ -1,0 +1,276 @@
+'use client';
+
+import React, { useState, useEffect } from 'react';
+import { 
+  Search, ChevronDown, ChevronUp, Save, FileText, 
+  CheckCircle2, AlertCircle, Clock, X, Filter, Calendar, Archive
+} from 'lucide-react';
+import { fetchAllOrders, saveOrderNote } from '@/app/actions/order-list';
+import { useRouter } from 'next/navigation';
+
+// Debounce Helper to prevent too many searches
+function useDebounce(value: string, delay: number) {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+  useEffect(() => {
+    const handler = setTimeout(() => setDebouncedValue(value), delay);
+    return () => clearTimeout(handler);
+  }, [value, delay]);
+  return debouncedValue;
+}
+
+export default function OrderList({ branchId }: { branchId: string }) {
+  const router = useRouter();
+  
+  // -- State --
+  const [orders, setOrders] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  
+  // Filters
+  const [search, setSearch] = useState('');
+  const debouncedSearch = useDebounce(search, 500);
+  // Default to TODAY
+  const [dateFilter, setDateFilter] = useState(new Date().toISOString().split('T')[0]);
+  const [showClosed, setShowClosed] = useState(false);
+
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+  const [noteText, setNoteText] = useState('');
+
+  // -- Fetch Data --
+  useEffect(() => {
+    async function load() {
+      setLoading(true);
+      // Fetch based on search OR date filter
+      const data = await fetchAllOrders(branchId, debouncedSearch, dateFilter, showClosed);
+      setOrders(data);
+      setLoading(false);
+    }
+    load();
+  }, [branchId, debouncedSearch, dateFilter, showClosed]);
+
+  // -- Actions --
+  const handleSaveNote = async (orderId: string) => {
+    await saveOrderNote(orderId, noteText);
+    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, notes: noteText } : o));
+    setEditingNoteId(null);
+  };
+
+  const startEditNote = (order: any) => {
+    setNoteText(order.notes || '');
+    setEditingNoteId(order.id);
+  };
+
+  return (
+    <div className="flex flex-col h-screen bg-slate-50">
+      
+      {/* 1. Custom Header (Replaces Global Header) */}
+      <div className="bg-white px-4 py-4 border-b border-slate-100 flex items-center gap-4 sticky top-0 z-40 shadow-sm">
+        <button 
+          onClick={() => router.push('/')}
+          className="h-10 w-10 bg-slate-50 rounded-full flex items-center justify-center text-slate-500 hover:bg-slate-100 active:scale-95 transition-all"
+        >
+          <X size={20} />
+        </button>
+        <div className="flex-1">
+          <h1 className="text-lg font-bold text-slate-800 leading-tight">All Orders</h1>
+          <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">
+            {search ? 'Searching Database...' : `Date: ${new Date(dateFilter).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`}
+          </p>
+        </div>
+      </div>
+
+      {/* 2. Controls Section */}
+      <div className="px-4 py-4 space-y-3 bg-white border-b border-slate-100">
+        
+        {/* Search */}
+        <div className="relative">
+          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+            <Search size={16} />
+          </div>
+          <input
+            type="text"
+            placeholder="Search last 4 digits (e.g. 0018)..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full pl-10 pr-4 py-3 bg-slate-50 border-0 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none transition-all placeholder:text-slate-400"
+          />
+        </div>
+
+        {/* Filters Row (Hide when searching to avoid confusion) */}
+        {!search && (
+          <div className="flex gap-3">
+            {/* Date Picker */}
+            <div className="flex-1 relative">
+               <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
+                 <Calendar size={14} />
+               </div>
+               <input 
+                 type="date" 
+                 value={dateFilter}
+                 onChange={(e) => setDateFilter(e.target.value)}
+                 className="w-full pl-9 pr-2 py-2.5 bg-slate-50 rounded-xl text-xs font-bold text-slate-700 outline-none border-0"
+               />
+            </div>
+
+            {/* Status Toggle */}
+            <button 
+              onClick={() => setShowClosed(!showClosed)}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all border ${
+                showClosed 
+                  ? 'bg-slate-800 text-white border-slate-800' 
+                  : 'bg-white text-slate-500 border-slate-200'
+              }`}
+            >
+              {showClosed ? <Archive size={14} /> : <Filter size={14} />}
+              {showClosed ? 'Showing All' : 'Active Only'}
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* 3. List Area */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-3 pb-20">
+        {loading ? (
+          <div className="flex flex-col items-center justify-center py-20 text-slate-300 gap-2">
+             <div className="animate-spin rounded-full h-6 w-6 border-2 border-current border-t-transparent"></div>
+             <p className="text-xs font-bold">Loading Records...</p>
+          </div>
+        ) : orders.length === 0 ? (
+          <div className="text-center py-20 text-slate-400 flex flex-col items-center gap-2">
+            <div className="h-12 w-12 bg-slate-100 rounded-full flex items-center justify-center">
+              <FileText size={20} />
+            </div>
+            <p className="text-xs">No orders found.</p>
+          </div>
+        ) : (
+          orders.map((order) => {
+            const isPaid = order.payment_status === 'PAID';
+            const isOpen = order.is_open;
+            const isExpanded = expandedId === order.id;
+
+            return (
+              <div key={order.id} className="bg-white border border-slate-100 rounded-2xl shadow-sm overflow-hidden transition-all">
+                
+                {/* CARD HEADER */}
+                <div 
+                  onClick={() => setExpandedId(isExpanded ? null : order.id)}
+                  className="p-4 flex items-center justify-between cursor-pointer hover:bg-slate-50 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    {/* Status Icon */}
+                    <div className={`h-10 w-10 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                      isOpen ? 'bg-blue-50 text-blue-600' : 'bg-slate-100 text-slate-400'
+                    }`}>
+                      {isOpen ? <Clock size={18} /> : <CheckCircle2 size={18} />}
+                    </div>
+                    
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-bold text-slate-800">{order.customers?.name}</span>
+                        {/* Status Badge */}
+                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase border ${
+                          isOpen 
+                            ? 'bg-blue-50 text-blue-700 border-blue-100' 
+                            : 'bg-slate-50 text-slate-500 border-slate-100'
+                        }`}>
+                          {isOpen ? 'Open' : 'Closed'}
+                        </span>
+                      </div>
+                      
+                      <p className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1.5">
+                        <span className="font-mono bg-slate-50 px-1 rounded text-slate-500">{order.readable_bill_id}</span>
+                        <span>•</span>
+                        <span className={isPaid ? 'text-green-600 font-bold' : 'text-red-500 font-bold'}>
+                          {isPaid ? 'PAID' : 'UNPAID'}
+                        </span>
+                        <span>•</span>
+                        <span>₹{order.final_amount}</span>
+                      </p>
+                    </div>
+                  </div>
+                  
+                  {isExpanded ? <ChevronUp size={18} className="text-slate-300" /> : <ChevronDown size={18} className="text-slate-300" />}
+                </div>
+
+                {/* EXPANDED DETAILS */}
+                {isExpanded && (
+                  <div className="px-4 pb-4 pt-0 border-t border-slate-50 bg-slate-50/30">
+                    
+                    <div className="grid grid-cols-2 gap-4 py-3 mb-2">
+                       <div className="flex items-center gap-2 text-xs text-slate-500">
+                          <AlertCircle size={14} className="text-blue-400" /> 
+                          {order.customers?.phone}
+                       </div>
+                       <div className="flex items-center gap-2 text-xs text-slate-500 justify-end">
+                          Items: <span className="font-bold text-slate-800">{order.total_piece_count}</span>
+                       </div>
+                    </div>
+
+                    {/* Simple Item Table */}
+                    <div className="bg-white rounded-xl border border-slate-100 p-2 mb-3">
+                      <table className="w-full text-xs">
+                        <tbody className="divide-y divide-slate-50">
+                          {order.order_items?.map((item: any, idx: number) => (
+                            <tr key={idx} className="text-slate-600">
+                              <td className="py-2 pl-2">
+                                <span className="font-medium">{item.item_name_snapshot}</span>
+                              </td>
+                              <td className="py-2 text-right pr-2 font-mono">₹{item.total_price}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Notes Section */}
+                    <div className="bg-yellow-50/50 border border-yellow-100 rounded-xl p-3">
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-[10px] font-bold text-yellow-700 uppercase tracking-widest flex items-center gap-1">
+                          <FileText size={10} /> Owner Note
+                        </span>
+                        {editingNoteId !== order.id && (
+                          <button 
+                            onClick={() => startEditNote(order)} 
+                            className="text-[10px] text-yellow-600 font-bold hover:underline"
+                          >
+                            {order.notes ? 'Edit' : 'Add'}
+                          </button>
+                        )}
+                      </div>
+
+                      {editingNoteId === order.id ? (
+                        <div className="flex flex-col gap-2">
+                          <textarea 
+                            value={noteText}
+                            onChange={(e) => setNoteText(e.target.value)}
+                            className="w-full p-2 text-xs bg-white border border-yellow-200 rounded-lg focus:ring-2 focus:ring-yellow-400 outline-none"
+                            rows={2}
+                            placeholder="Type note here..."
+                          />
+                          <div className="flex gap-2 justify-end">
+                            <button onClick={() => setEditingNoteId(null)} className="text-xs text-slate-400 font-medium px-2">Cancel</button>
+                            <button 
+                              onClick={() => handleSaveNote(order.id)}
+                              className="bg-yellow-100 text-yellow-700 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 hover:bg-yellow-200"
+                            >
+                              <Save size={12} /> Save
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-slate-600 italic">
+                          {order.notes || "No notes."}
+                        </p>
+                      )}
+                    </div>
+
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}

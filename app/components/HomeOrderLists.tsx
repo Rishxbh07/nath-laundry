@@ -11,7 +11,7 @@ interface OrderItem {
   amount_paid: number;
   payment_status: string;
   delivery_mode: 'PICKUP' | 'DELIVERY';
-  due_date: string; // Ensure this is selected in your server action
+  due_date: string;
   customers: {
     name: string;
     phone: string;
@@ -33,7 +33,6 @@ export default function HomeOrderLists({ data }: HomeOrderListsProps) {
   const getDaysOverdue = (dateStr: string) => {
     const due = new Date(dateStr);
     const today = new Date();
-    // Reset time to midnight for accurate day diff
     due.setHours(0,0,0,0);
     today.setHours(0,0,0,0);
     
@@ -192,7 +191,7 @@ export default function HomeOrderLists({ data }: HomeOrderListsProps) {
                     <MessageCircle size={12} /> WhatsApp
                   </button>
                   
-                  {/* Manage Button */}
+                  {/* Manage Button - Now appears for ALL Tabs */}
                   <Link
                     href={`/scan?id=${order.id}`}
                     className="flex-none w-14 bg-slate-800 text-white hover:bg-slate-900 rounded-xl flex items-center justify-center transition-colors active:scale-95 shadow-md"
