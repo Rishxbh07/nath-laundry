@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { X, CheckCircle2, AlertCircle, Banknote, Truck, Loader2, Shirt, UserCheck, Calendar } from 'lucide-react';
 import { fetchOrderDetails } from '@/app/actions/order';
@@ -21,7 +21,8 @@ const Scanner = dynamic(
   }
 );
 
-export default function ScanPage() {
+// --- 1. Main Logic Component (Renamed) ---
+function ScanContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const queryId = searchParams.get('id');
@@ -44,7 +45,6 @@ export default function ScanPage() {
 
   const handleManualFetch = async (id: string) => {
     setProcessing(true);
-    // Ensure camera is off if we are fetching manually
     setIsCameraActive(false); 
     
     try {
@@ -61,7 +61,6 @@ export default function ScanPage() {
   };
 
   const handleScan = async (detectedCodes: any[]) => {
-    // Prevent multiple scans
     if (scannedData || processing) return;
 
     const rawValue = detectedCodes[0]?.rawValue;
@@ -71,13 +70,10 @@ export default function ScanPage() {
       const parsed = JSON.parse(rawValue);
       if (!parsed.id) throw new Error("Invalid QR Code");
       
-      // 1. STOP CAMERA IMMEDIATELY upon successful read
       setIsCameraActive(false);
-      
-      // 2. Then fetch data
       await handleManualFetch(parsed.id);
     } catch (e) {
-      // Ignore invalid JSON scans, keep camera open
+      // Ignore invalid JSON scans
     }
   };
 
@@ -129,7 +125,6 @@ export default function ScanPage() {
 
       <div className="flex-1 flex flex-col items-center justify-center relative bg-gray-900">
         
-        {/* State 1: Success Message */}
         {successMsg ? (
           <div className="text-center space-y-4 animate-in zoom-in duration-300 p-8 z-30">
             <div className="h-24 w-24 bg-green-500 rounded-full flex items-center justify-center mx-auto text-black shadow-lg shadow-green-500/50">
@@ -140,10 +135,9 @@ export default function ScanPage() {
           </div>
         ) : scannedData ? (
           
-          /* State 2: Order Details (Camera is OFF here) */
+          /* Order Details Card */
           <div className="w-full h-full bg-slate-100 text-slate-800 flex flex-col animate-in slide-in-from-bottom duration-300 pt-16 rounded-t-3xl overflow-hidden shadow-2xl">
             
-            {/* Header Section */}
             <div className="bg-white p-6 rounded-b-3xl shadow-sm z-10 shrink-0 border-b border-slate-100">
               <div className="flex justify-between items-start mb-2">
                 <div>
@@ -164,7 +158,6 @@ export default function ScanPage() {
                 </div>
               </div>
 
-              {/* Closure Details */}
               {isClosed && (
                 <div className="mt-4 pt-3 border-t border-slate-100 flex flex-col gap-2 text-xs bg-slate-50 p-3 rounded-xl border animate-in fade-in">
                    <div className="flex items-center justify-between">
@@ -189,7 +182,6 @@ export default function ScanPage() {
               )}
             </div>
 
-            {/* Items List */}
             <div className="flex-1 overflow-y-auto p-5 space-y-3 bg-slate-50">
               <div className="flex justify-between items-center mb-1">
                 <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Order Items</h3>
@@ -217,16 +209,13 @@ export default function ScanPage() {
               ))}
             </div>
 
-            {/* Footer Actions */}
             <div className="p-5 bg-white border-t border-slate-200 shrink-0 pb-8 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-20">
               {isClosed ? (
                  <div className="bg-gray-800 p-4 rounded-2xl flex flex-col items-center justify-center gap-2 text-center text-white shadow-xl shadow-gray-400/20">
                     <div className="flex items-center gap-2 font-bold text-lg text-green-400">
                        <CheckCircle2 size={24} /> Bill is Closed
                     </div>
-                    <p className="text-gray-400 text-xs px-4">
-                      This order has already been delivered.
-                    </p>
+                    <p className="text-gray-400 text-xs px-4">This order has already been delivered.</p>
                     <button 
                       onClick={() => router.push('/')}
                       className="mt-3 w-full py-3 bg-white/10 hover:bg-white/20 text-white font-bold rounded-xl transition-colors text-sm"
@@ -267,7 +256,7 @@ export default function ScanPage() {
           </div>
 
         ) : (
-          /* State 3: Camera Scanning (Active only if isCameraActive is true) */
+          /* Scanner View */
           <div className="w-full h-full absolute inset-0 bg-black">
             {isCameraActive ? (
               <>
@@ -283,7 +272,6 @@ export default function ScanPage() {
                 </div>
               </>
             ) : (
-              // Loading State (Camera off, waiting for data)
               <div className="absolute inset-0 flex items-center justify-center bg-black/80 z-20 flex-col gap-3">
                  <Loader2 className="animate-spin text-white" size={48} />
                  <p className="text-white font-bold text-sm tracking-widest uppercase">Fetching Details...</p>
@@ -299,5 +287,18 @@ export default function ScanPage() {
         )}
       </div>
     </div>
+  );
+}
+
+// --- 2. Default Export with Suspense Boundary ---
+export default function ScanPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <Loader2 className="animate-spin text-white" size={48} />
+      </div>
+    }>
+      <ScanContent />
+    </Suspense>
   );
 }
