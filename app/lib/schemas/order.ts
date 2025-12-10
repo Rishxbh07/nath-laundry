@@ -1,4 +1,3 @@
-// File: app/lib/schemas/order.ts
 import { z } from 'zod';
 
 export const orderItemSchema = z.object({
@@ -13,6 +12,7 @@ export const orderItemSchema = z.object({
   unit_price: z.number().min(0), 
   total_price: z.number().min(0),
   is_base_charge: z.boolean().optional(),
+  manual_rate: z.number().optional(), // <--- NEW FIELD
 });
 
 export const createOrderSchema = z.object({
@@ -23,7 +23,6 @@ export const createOrderSchema = z.object({
   items: z.array(orderItemSchema).min(1, "Add at least one item"),
   bulk_weight: z.number().optional(), 
   
-  // New Field for Inventory Tracking
   total_item_count: z.number().min(1, "Total piece count is required"),
 
   delivery_mode: z.enum(['PICKUP', 'DELIVERY']),

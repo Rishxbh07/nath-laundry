@@ -22,7 +22,6 @@ export function useOrderCalculator({
   const { control, setValue } = form;
   const { replace } = useFieldArray({ control, name: 'items' });
 
-  // Constants derived from settings
   const RATES = {
     wf_kg: Number(settings?.wf_kg_rate || 45),
     wi_kg: Number(settings?.wi_kg_rate || 60),
@@ -60,40 +59,39 @@ export function useOrderCalculator({
       
       const isManual = entry.item.kind === 'MANUAL';
       
-      // Helper to find specific rates
       const getSpecialRate = (sType: string) => {
         return specialRates.find(
           r => r.item_id === entry.item.id && r.service_type === sType
         )?.rate_value;
       };
 
-      // --- Logic 0: Manual Item ---
-      if (isManual) {
-        price = Number(entry.manual_rate || 0);
+      // --- PRIORITY 1: MANUAL OVERRIDE (New Logic) ---
+      // If a manual rate is provided (via override or custom item), use it directly.
+      if (entry.manual_rate !== undefined && entry.manual_rate !== null) {
+         price = Number(entry.manual_rate);
+         // Keep existing service label unless it's generic
+         if (!serviceLabel || serviceLabel === 'Standard') {
+            serviceLabel = 'Special Wash';
+         }
       }
-
+      
       // --- Logic A: Standard Service ---
       else if (entry.service_type === 'Standard') {
-        // BUG FIX: Check for explicit Special Rate FIRST (e.g. Bedsheet 30/pc)
         const explicitRate = getSpecialRate('Standard') || getSpecialRate('Wash');
 
         if (explicitRate !== undefined) {
-           // If DB has a rate, use it (even if inside a bulk pile)
            price = Number(explicitRate);
            serviceLabel = 'Special Wash'; 
         } 
         else if (entry.item.kind === 'SPECIAL') {
-          // Fallback for items marked SPECIAL but missing specific rate
           price = 50; 
           serviceLabel = 'Special Wash';
         } 
         else if (bulkWeight === 0 && entry.item.default_unit === 'PIECE') {
-          // Small order mode (no bulk weight)
           price = RATES.small_piece;
           serviceLabel = 'Piece Wash';
         } 
         else {
-          // Standard item inside a Bulk Order -> Free (included in weight)
           price = 0; 
           serviceLabel = bulkService; 
         }
@@ -111,10 +109,9 @@ export function useOrderCalculator({
          price = Number(customRate || RATES.dry_clean_default);
       }
 
-      // --- Logic D: Weight Based Specials (Blankets/Curtains) ---
-      // Only applies if unit=KG and it's not a manual/custom item
-      if (!isManual && entry.item.default_unit === 'KG') {
-         // If we haven't already found a special price (like a fixed price for curtains)
+      // --- Logic D: Weight Based Specials ---
+      // Applies only if NO manual override and NO special fixed price set
+      if (!isManual && entry.manual_rate === undefined && entry.item.default_unit === 'KG') {
          if (price === 0 || price === 50) { 
             const w = entry.weight || 0;
             if (w <= RATES.blanket_threshold) {
@@ -134,17 +131,14 @@ export function useOrderCalculator({
         quantity: entry.quantity,
         weight: entry.weight,
         unit_price: price,
-        // For KG items calculated in Logic D, price is usually the *Total* Flat Price,
-        // so we don't multiply by weight again unless it was a rate-per-kg scenario.
-        // Assuming Logic D sets the final "unit_price" as the cost for that item:
         total_price: (entry.item.default_unit === 'KG' && !isManual) 
           ? price 
           : price * entry.quantity,
-        is_chargeable: !entry.is_base_charge
+        is_chargeable: !entry.is_base_charge,
+        manual_rate: entry.manual_rate // Persist the override
       });
     });
 
-    // 4. Sync to Form
     replace(finalBillItems);
     setValue('bulk_weight', bulkWeight);
 

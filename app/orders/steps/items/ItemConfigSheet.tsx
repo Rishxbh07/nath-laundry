@@ -1,25 +1,52 @@
-import React, { useState } from 'react';
-import { Trash2, Check } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Trash2, Check, IndianRupee, Minus, Plus } from 'lucide-react';
 
 interface ItemConfigProps {
   item: any;
   bulkService: string;
+  specialRates: any[]; // <--- New Prop
   onClose: () => void;
-  onConfirm: (data: { qty: number; weight: number; service: string }) => void;
+  onConfirm: (data: { qty: number; weight: number; service: string, overridePrice?: number }) => void;
 }
 
-export default function ItemConfigSheet({ item, bulkService, onClose, onConfirm }: ItemConfigProps) {
-  // 1. Detect if this is an "Ethnic" item (Case insensitive check)
-  const isEthnic = item.category?.toLowerCase() === 'ethnic';
+export default function ItemConfigSheet({ item, bulkService, specialRates, onClose, onConfirm }: ItemConfigProps) {
+  // Category Checks
+  const cat = item.category?.toLowerCase() || '';
+  const isTargetCategory = cat === 'home linen' || cat === 'ethnic' || cat === 'other';
+  const isEthnic = cat === 'ethnic';
 
   const [qty, setQty] = useState(1);
   const [weight, setWeight] = useState(0);
-  
-  // 2. Auto-select 'Dry Clean' for Ethnic items, otherwise default to 'Standard'
   const [service, setService] = useState(isEthnic ? 'Dry Clean' : 'Standard');
+  
+  // Override State
+  const [overridePrice, setOverridePrice] = useState<number | ''>('');
+
+  // Auto-fill default price for target categories to make editing easier
+  useEffect(() => {
+    if (isTargetCategory) {
+      const defaultRate = specialRates.find(
+        r => r.item_id === item.id && r.service_type === service
+      )?.rate_value;
+      
+      if (defaultRate) {
+        setOverridePrice(Number(defaultRate));
+      }
+    }
+  }, [isTargetCategory, item.id, service, specialRates]);
+
+  const handlePriceChange = (amount: number) => {
+    const current = typeof overridePrice === 'number' ? overridePrice : 0;
+    setOverridePrice(Math.max(0, current + amount));
+  };
 
   const handleConfirm = () => {
-    onConfirm({ qty, weight, service });
+    onConfirm({ 
+      qty, 
+      weight, 
+      service,
+      overridePrice: overridePrice === '' ? undefined : overridePrice
+    });
     onClose();
   };
 
@@ -38,10 +65,9 @@ export default function ItemConfigSheet({ item, bulkService, onClose, onConfirm 
           </button>
         </div>
 
-        {/* Dynamic Inputs based on Unit Type */}
         <div className="space-y-4">
           
-          {/* A. Weight Input (For Blankets/Curtains) */}
+          {/* A. Weight / Quantity */}
           {item.default_unit === 'KG' ? (
              <div>
                <label className="text-xs font-bold text-slate-400 uppercase">Item Weight</label>
@@ -55,10 +81,8 @@ export default function ItemConfigSheet({ item, bulkService, onClose, onConfirm 
                  />
                  <span className="text-sm font-bold text-slate-400">KG</span>
                </div>
-               <p className="text-[10px] text-slate-400 mt-1">*Under 1.5kg fixed rate, else per kg</p>
              </div>
           ) : (
-             /* B. Quantity Stepper (For Clothes) */
              <div className="flex items-center justify-between bg-slate-50 p-3 rounded-xl border border-slate-100">
                 <span className="text-sm font-bold text-slate-600">Quantity</span>
                 <div className="flex items-center gap-4">
@@ -69,12 +93,10 @@ export default function ItemConfigSheet({ item, bulkService, onClose, onConfirm 
              </div>
           )}
 
-          {/* C. Service Selector */}
+          {/* B. Service Selector */}
           <div>
             <label className="text-xs font-bold text-slate-400 uppercase">Service Type</label>
             <div className="grid grid-cols-2 gap-2 mt-2">
-              
-              {/* Only show Standard/Iron if NOT Ethnic */}
               {!isEthnic && (
                 <>
                   <button 
@@ -82,7 +104,6 @@ export default function ItemConfigSheet({ item, bulkService, onClose, onConfirm 
                     className={`p-3 rounded-xl text-xs font-bold border transition-all ${service === 'Standard' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white border-slate-200 text-slate-500'}`}
                   >
                     Standard
-                    <span className="block text-[9px] opacity-70 font-normal mt-0.5">Inherits Bulk ({bulkService})</span>
                   </button>
                   
                   {item.default_unit === 'PIECE' && (
@@ -91,29 +112,54 @@ export default function ItemConfigSheet({ item, bulkService, onClose, onConfirm 
                       className={`p-3 rounded-xl text-xs font-bold border transition-all ${service === 'Iron Only' ? 'bg-orange-500 text-white border-orange-500' : 'bg-white border-slate-200 text-slate-500'}`}
                     >
                       Iron Only
-                      <span className="block text-[9px] opacity-70 font-normal mt-0.5">Add-on Charge</span>
                     </button>
                   )}
                 </>
               )}
 
-              {/* Dry Clean Button - Full width if Ethnic */}
               <button 
                 onClick={() => setService('Dry Clean')}
                 className={`p-3 rounded-xl text-xs font-bold border transition-all ${
-                  // Logic: If Ethnic, force selection visual + span full width
                   isEthnic 
-                    ? 'col-span-2 bg-purple-600 text-white border-purple-600 ring-2 ring-purple-200' 
+                    ? 'col-span-2 bg-purple-600 text-white border-purple-600' 
                     : service === 'Dry Clean' ? 'bg-purple-600 text-white border-purple-600' : 'bg-white border-slate-200 text-slate-500'
                 }`}
               >
                 Dry Clean
-                <span className="block text-[9px] opacity-70 font-normal mt-0.5">
-                  {isEthnic ? 'Only Option for Ethnic' : 'Separate Bill'}
-                </span>
               </button>
             </div>
           </div>
+
+          {/* C. Price Override Box (Only for Target Categories) */}
+          {isTargetCategory && (
+            <div className="bg-yellow-50 p-3 rounded-2xl border border-yellow-100 animate-in fade-in">
+               <label className="text-[10px] font-bold text-yellow-700 uppercase tracking-wider flex items-center gap-1 mb-2">
+                 <IndianRupee size={12} /> Override Price (Per Unit)
+               </label>
+               
+               <div className="flex gap-2">
+                  <div className="flex-1 relative">
+                    <input 
+                      type="number"
+                      value={overridePrice}
+                      onChange={(e) => setOverridePrice(Number(e.target.value))}
+                      className="w-full bg-white border border-yellow-200 p-3 rounded-xl text-center font-bold text-slate-800 outline-none focus:ring-2 focus:ring-yellow-400"
+                      placeholder="Auto"
+                    />
+                  </div>
+                  
+                  <div className="flex flex-col gap-1">
+                    <button onClick={() => handlePriceChange(5)} className="px-3 py-1 bg-white border border-yellow-200 rounded-lg text-yellow-700 hover:bg-yellow-100 active:scale-95">
+                      <Plus size={14} />
+                    </button>
+                    <button onClick={() => handlePriceChange(-5)} className="px-3 py-1 bg-white border border-yellow-200 rounded-lg text-yellow-700 hover:bg-yellow-100 active:scale-95">
+                      <Minus size={14} />
+                    </button>
+                  </div>
+               </div>
+            </div>
+          )}
+
         </div>
 
         <button 

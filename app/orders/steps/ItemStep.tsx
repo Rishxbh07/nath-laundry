@@ -1,4 +1,3 @@
-// File: app/orders/steps/ItemStep.tsx
 'use client';
 
 import React, { useState } from 'react';
@@ -17,34 +16,29 @@ interface ItemsStepProps {
   dbItems: any[];
   settings: any;
   specialRates: any[];
-  initialItems?: any[]; // New Prop
+  initialItems?: any[]; 
 }
 
 export default function ItemsStep({ form, dbItems, settings, specialRates, initialItems }: ItemsStepProps) {
-  // Initialize bulk weight from form (which might have initial data)
   const [bulkWeight, setBulkWeight] = useState<number>(form.watch('bulk_weight') || 0);
   const [bulkService, setBulkService] = useState<'Wash & Fold' | 'Wash & Iron'>('Wash & Fold');
   
-  // Initialize Manifest from Initial Items
   const [manifest, setManifest] = useState<any[]>(() => {
     if (!initialItems) return [];
     
-    // We need to reconstruct the "manifest" structure from the flat items list
-    // Filter out the auto-generated Base Charge, as the calculator re-adds it
     const manualItems = initialItems.filter(i => !i.is_base_charge);
     
     return manualItems.map(i => ({
       item: { 
         id: i.item_id || 'manual', 
         name: i.item_name, 
-        // Try to find original category/unit if possible, else default
         default_unit: i.weight > 0 ? 'KG' : 'PIECE', 
         kind: i.item_id ? 'STANDARD' : 'MANUAL' 
       },
       quantity: i.quantity,
       weight: i.weight,
       service_type: i.service_type,
-      manual_rate: i.item_id ? undefined : i.unit_price // Preserve manual rates
+      manual_rate: i.manual_rate // Preserve loaded manual rates
     }));
   });
 
@@ -60,19 +54,19 @@ export default function ItemsStep({ form, dbItems, settings, specialRates, initi
     specialRates
   });
 
-  // Standard DB Item Handler
-  const handleAddItem = (data: { qty: number; weight: number; service: string }) => {
+  // Updated Handler with Override Price
+  const handleAddItem = (data: { qty: number; weight: number; service: string; overridePrice?: number }) => {
     if (!activeItem) return;
     setManifest(prev => [...prev, {
       item: activeItem,
       quantity: data.qty,
       weight: data.weight,
-      service_type: data.service
+      service_type: data.service,
+      manual_rate: data.overridePrice // Pass to calculator
     }]);
     setActiveItem(null); 
   };
 
-  // Custom Item Handler (Directly adds entry)
   const handleAddCustomItem = (customEntry: any) => {
     setManifest(prev => [...prev, customEntry]);
   };
@@ -108,6 +102,7 @@ export default function ItemsStep({ form, dbItems, settings, specialRates, initi
         <ItemConfigSheet 
           item={activeItem}
           bulkService={bulkService}
+          specialRates={specialRates} // <--- Pass Special Rates
           onClose={() => setActiveItem(null)}
           onConfirm={handleAddItem}
         />
