@@ -1,7 +1,8 @@
 import { type NextRequest } from 'next/server'
 import { updateSession } from '@/app/utils/supabase/middleware'
 
-export async function middleware(request: NextRequest) {
+// Rename function to 'proxy' to match Next.js 16+ convention
+export async function proxy(request: NextRequest) {
   return await updateSession(request)
 }
 
@@ -14,10 +15,10 @@ export const config = {
      * - favicon.ico (favicon file)
      * - login
      * - auth
-     * - manifest.json (PWA Manifest)  <-- ADDED
-     * - icons/ (PWA Icons)            <-- ADDED
-     * - sw.js (Service Worker)        <-- ADDED
-     * - workbox- (Workbox Files)      <-- ADDED
+     * - manifest.json (PWA Manifest)
+     * - icons/ (PWA Icons)
+     * - sw.js (Service Worker)
+     * - workbox- (Workbox Files)
      * - images with extensions
      */
     '/((?!_next/static|_next/image|favicon.ico|manifest.json|icons/|sw.js|workbox-|login|auth|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',

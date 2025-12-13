@@ -62,20 +62,30 @@ export async function fetchAllOrders(
     .eq('branch_id', branchId)
     .order('created_at', { ascending: false });
 
-  // 1. Date Limit (Essential for performance)
+  // 1. Date Limit (IST ADJUSTED)
   if (date) {
-    const start = new Date(date);
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(date);
-    end.setHours(23, 59, 59, 999);
+    // 'date' comes as 'YYYY-MM-DD' (e.g., '2023-12-14')
+    // We treat this string as 00:00 IST.
     
-    query = query.gte('created_at', start.toISOString()).lte('created_at', end.toISOString());
+    // Step A: Treat input as UTC midnight temporarily
+    const utcMidnight = new Date(date + 'T00:00:00Z');
+    
+    // Step B: Shift by -5.5 hours to get "IST Midnight" in UTC
+    // 00:00 IST = 18:30 UTC (Previous Day)
+    const istOffset = 5.5 * 60 * 60 * 1000;
+    const istStart = new Date(utcMidnight.getTime() - istOffset);
+    
+    // Step C: End of that IST day (Start + 24 hours - 1ms)
+    const istEnd = new Date(istStart.getTime() + (24 * 60 * 60 * 1000) - 1);
+    
+    query = query
+      .gte('created_at', istStart.toISOString())
+      .lte('created_at', istEnd.toISOString());
   }
 
   // 2. Status Filter (Hide Closed)
   if (!showClosed) {
     // Show ONLY Active/Open orders (NOT Delivered/Paid/Closed)
-    // Adjust logic based on your 'is_open' flag or status text
     query = query.eq('is_open', true);
   }
 

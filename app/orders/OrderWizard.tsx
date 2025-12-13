@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useReactToPrint } from 'react-to-print';
-import { toBlob } from 'html-to-image'; 
+// REMOVED: import { toBlob } from 'html-to-image'; <-- Optimization: Moved to dynamic import
 import Receipt from '@/app/components/Receipt';
 import dynamic from 'next/dynamic';
 
@@ -62,6 +62,7 @@ export default function OrderWizard({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderSuccess, setOrderSuccess] = useState<any>(null);
   const [isCopying, setIsCopying] = useState(false); 
+  const [isExiting, setIsExiting] = useState(false); // <--- ADDED STATE
   const router = useRouter();
 
   const receiptRef = useRef<HTMLDivElement>(null); 
@@ -100,6 +101,9 @@ export default function OrderWizard({
     setIsCopying(true);
 
     try {
+      // 1. DYNAMIC IMPORT (Huge Performance Win for initial load)
+      const { toBlob } = await import('html-to-image');
+
       let rawPhone = orderSuccess.customer_phone;
       if (!rawPhone || rawPhone === 'Unknown') {
          const cust = orderSuccess.customers;
@@ -277,11 +281,18 @@ export default function OrderWizard({
              >
                 <Printer size={18} /> Print
              </button>
+             
+             {/* UPDATED DONE BUTTON FOR PERFORMANCE */}
              <button 
-                onClick={() => router.push('/')}
-                className="flex items-center justify-center gap-2 py-3 bg-slate-100 text-slate-600 font-bold rounded-xl hover:bg-slate-200 transition-colors"
+                onClick={() => {
+                  setIsExiting(true);
+                  window.location.href = '/'; 
+                }}
+                disabled={isExiting}
+                className="flex items-center justify-center gap-2 py-3 bg-slate-100 text-slate-600 font-bold rounded-xl hover:bg-slate-200 transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
              >
-                <Home size={18} /> Done
+                {isExiting ? <Loader2 className="animate-spin" size={18} /> : <Home size={18} />} 
+                {isExiting ? "Redirecting..." : "Done"}
              </button>
           </div>
         </div>

@@ -6,7 +6,6 @@ const withPWA = withPWAInit({
   cacheOnFrontEndNav: true,
   aggressiveFrontEndNavCaching: true,
   reloadOnOnline: true,
-  //swcMinify: true,
   disable: process.env.NODE_ENV === "development", // Disable PWA in dev mode
   workboxOptions: {
     disableDevLogs: true,
@@ -14,7 +13,18 @@ const withPWA = withPWAInit({
 });
 
 const nextConfig: NextConfig = {
-  /* other config options here */
+  // 1. Enable Compression (Crucial for 4G/Slow Networks to fix Timeout errors)
+  compress: true, 
+
+  // 2. Reduce JS Bundle Size (Tree Shaking)
+  experimental: {
+    optimizePackageImports: ['lucide-react', 'date-fns', 'html-to-image'],
+  },
+
+  // 3. Remove Console Logs in Production (Saves CPU)
+  compiler: {
+    removeConsole: process.env.NODE_ENV === "production",
+  },
 };
 
 export default withPWA(nextConfig);

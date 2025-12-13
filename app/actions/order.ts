@@ -4,6 +4,25 @@ import { createClient } from '@/app/utils/supabase/server'
 import { CreateOrderInput } from '@/app/lib/schemas/order'
 import { revalidatePath } from 'next/cache'
 
+// --- Helper: Convert IST Date+Time Inputs to UTC ISO String ---
+function toISOFromIST(dateStr: string, timeStr: string) {
+  // 1. Parse inputs (YYYY-MM-DD and HH:mm)
+  const [year, month, day] = dateStr.split('-').map(Number);
+  const [hour, minute] = timeStr.split(':').map(Number);
+
+  // 2. Create a base Date object (Treating these numbers as if they were UTC first)
+  // Month is 0-indexed in JS Date
+  const utcBase = new Date(Date.UTC(year, month - 1, day, hour, minute, 0));
+
+  // 3. Subtract 5.5 Hours (IST Offset) to get the actual UTC timestamp
+  // Example: User wants 14:00 IST. 
+  // 14:00 - 5.5h = 08:30 UTC.
+  const istOffset = 5.5 * 60 * 60 * 1000;
+  const trueUTC = new Date(utcBase.getTime() - istOffset);
+
+  return trueUTC.toISOString();
+}
+
 // --- Helper: Calculate Total Weight ---
 function calculateTotalWeight(items: any[]): number {
   // Sums up weight of all items (Bulk Pile weight + individual special item weights)
@@ -101,8 +120,10 @@ export async function submitOrder(data: CreateOrderInput, branchId: string) {
 
   const totalAmount = data.items.reduce((sum, item) => sum + item.total_price, 0);
   const finalAmount = totalAmount - (data.discount_amount || 0);
-  const combinedDateTime = `${data.due_date}T${data.due_time}:00`; 
-  const finalDueDate = new Date(combinedDateTime).toISOString();
+
+  // IST FIX: Use helper to calculate Due Date
+  const finalDueDate = toISOFromIST(data.due_date, data.due_time);
+  
   const isPaidOnCreation = data.payment_status === 'PAID';
   
   // Calculate Total Weight for the Order Table
@@ -117,7 +138,7 @@ export async function submitOrder(data: CreateOrderInput, branchId: string) {
     payment_status: data.payment_status,
     payment_method: isPaidOnCreation ? data.payment_method : null,
     total_piece_count: data.total_item_count,
-    total_weight: totalWeight, // <-- Added Here
+    total_weight: totalWeight,
     created_by: user.id,
     closed_by: isPaidOnCreation ? user.id : null,
     completed_at: isPaidOnCreation ? new Date().toISOString() : null,
@@ -125,12 +146,11 @@ export async function submitOrder(data: CreateOrderInput, branchId: string) {
     status: isPaidOnCreation ? 'DELIVERED' : 'RECEIVED'
   };
 
-  // Fix: Map 'weight' (form) to 'weight_kg' (db)
   const formattedItems = data.items.map(item => ({
     ...item,
     item_id: item.item_id || null, 
     item_name_snapshot: item.item_name,
-    weight_kg: item.weight || 0 // <-- Added Mapping
+    weight_kg: item.weight || 0
   }));
 
   const { data: orderId, error } = await supabase.rpc('create_full_order', {
@@ -159,9 +179,10 @@ export async function updateOrder(orderId: string, data: CreateOrderInput) {
 
   const totalAmount = data.items.reduce((sum, item) => sum + item.total_price, 0);
   const finalAmount = Math.max(0, totalAmount - (data.discount_amount || 0));
-  const combinedDateTime = `${data.due_date}T${data.due_time}:00`;
   
-  // Calculate Total Weight
+  // IST FIX: Use helper to calculate Due Date
+  const finalDueDate = toISOFromIST(data.due_date, data.due_time);
+  
   const totalWeight = calculateTotalWeight(data.items);
 
   // A. Handle Customer Update First
@@ -186,14 +207,14 @@ export async function updateOrder(orderId: string, data: CreateOrderInput) {
     .update({
       customer_id: customerData.id,
       delivery_mode: data.delivery_mode,
-      due_date: new Date(combinedDateTime).toISOString(),
+      due_date: finalDueDate, // Updated
       discount_amount: data.discount_amount,
       total_amount: totalAmount,
       final_amount: finalAmount,
       payment_status: data.payment_status,
       payment_method: data.payment_method || null,
       total_piece_count: data.total_item_count,
-      total_weight: totalWeight, // <-- Updated Here
+      total_weight: totalWeight,
       completed_at: data.payment_status === 'PAID' ? new Date().toISOString() : null,
       status: data.payment_status === 'PAID' ? 'DELIVERED' : 'RECEIVED', 
       bill_status: data.payment_status === 'PAID' ? 'CLOSED' : 'OPEN'
@@ -216,7 +237,7 @@ export async function updateOrder(orderId: string, data: CreateOrderInput) {
     item_name_snapshot: item.item_name,
     service_type: item.service_type,
     quantity: item.quantity,
-    weight_kg: item.weight || 0, // <-- Mapping Confirmed
+    weight_kg: item.weight || 0,
     unit_price: item.unit_price,
     total_price: item.total_price,
     is_chargeable: !item.is_base_charge

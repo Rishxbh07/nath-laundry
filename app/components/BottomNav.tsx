@@ -12,12 +12,13 @@ export default function BottomNav() {
 
   // Hide nav on specific pages
   if (
+    pathname === '/orders' ||           // <--- Added: Hides on "All Orders" List
     pathname?.startsWith('/orders/new') || 
     pathname?.startsWith('/orders/edit') || 
     pathname?.startsWith('/scan') || 
     pathname?.startsWith('/bill') ||
-    pathname?.startsWith('/terms') || // <--- Added
-    pathname?.startsWith('/login')    // <--- Added
+    pathname?.startsWith('/terms') || 
+    pathname?.startsWith('/login')
   ) {
     return null;
   }

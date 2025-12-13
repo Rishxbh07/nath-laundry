@@ -3,12 +3,12 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Search, ChevronDown, ChevronUp, Save, FileText, 
-  CheckCircle2, AlertCircle, Clock, X, Filter, Calendar, Archive
+  CheckCircle2, AlertCircle, Clock, X, Filter, Calendar, Archive, CalendarDays
 } from 'lucide-react';
 import { fetchAllOrders, saveOrderNote } from '@/app/actions/order-list';
 import { useRouter } from 'next/navigation';
 
-// Debounce Helper to prevent too many searches
+// Debounce Helper
 function useDebounce(value: string, delay: number) {
   const [debouncedValue, setDebouncedValue] = useState(value);
   useEffect(() => {
@@ -28,7 +28,6 @@ export default function OrderList({ branchId }: { branchId: string }) {
   // Filters
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebounce(search, 500);
-  // Default to TODAY
   const [dateFilter, setDateFilter] = useState(new Date().toISOString().split('T')[0]);
   const [showClosed, setShowClosed] = useState(false);
 
@@ -40,7 +39,6 @@ export default function OrderList({ branchId }: { branchId: string }) {
   useEffect(() => {
     async function load() {
       setLoading(true);
-      // Fetch based on search OR date filter
       const data = await fetchAllOrders(branchId, debouncedSearch, dateFilter, showClosed);
       setOrders(data);
       setLoading(false);
@@ -63,7 +61,7 @@ export default function OrderList({ branchId }: { branchId: string }) {
   return (
     <div className="flex flex-col h-screen bg-slate-50">
       
-      {/* 1. Custom Header (Replaces Global Header) */}
+      {/* 1. Header */}
       <div className="bg-white px-4 py-4 border-b border-slate-100 flex items-center gap-4 sticky top-0 z-40 shadow-sm">
         <button 
           onClick={() => router.push('/')}
@@ -79,27 +77,23 @@ export default function OrderList({ branchId }: { branchId: string }) {
         </div>
       </div>
 
-      {/* 2. Controls Section */}
+      {/* 2. Controls */}
       <div className="px-4 py-4 space-y-3 bg-white border-b border-slate-100">
-        
-        {/* Search */}
         <div className="relative">
           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
             <Search size={16} />
           </div>
           <input
             type="text"
-            placeholder="Search last 4 digits (e.g. 0018)..."
+            placeholder="Search last 4 digits..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full pl-10 pr-4 py-3 bg-slate-50 border-0 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none transition-all placeholder:text-slate-400"
           />
         </div>
 
-        {/* Filters Row (Hide when searching to avoid confusion) */}
         {!search && (
           <div className="flex gap-3">
-            {/* Date Picker */}
             <div className="flex-1 relative">
                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
                  <Calendar size={14} />
@@ -111,8 +105,6 @@ export default function OrderList({ branchId }: { branchId: string }) {
                  className="w-full pl-9 pr-2 py-2.5 bg-slate-50 rounded-xl text-xs font-bold text-slate-700 outline-none border-0"
                />
             </div>
-
-            {/* Status Toggle */}
             <button 
               onClick={() => setShowClosed(!showClosed)}
               className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all border ${
@@ -122,7 +114,7 @@ export default function OrderList({ branchId }: { branchId: string }) {
               }`}
             >
               {showClosed ? <Archive size={14} /> : <Filter size={14} />}
-              {showClosed ? 'Showing All' : 'Active Only'}
+              {showClosed ? 'All' : 'Active'}
             </button>
           </div>
         )}
@@ -133,7 +125,7 @@ export default function OrderList({ branchId }: { branchId: string }) {
         {loading ? (
           <div className="flex flex-col items-center justify-center py-20 text-slate-300 gap-2">
              <div className="animate-spin rounded-full h-6 w-6 border-2 border-current border-t-transparent"></div>
-             <p className="text-xs font-bold">Loading Records...</p>
+             <p className="text-xs font-bold">Loading...</p>
           </div>
         ) : orders.length === 0 ? (
           <div className="text-center py-20 text-slate-400 flex flex-col items-center gap-2">
@@ -147,6 +139,10 @@ export default function OrderList({ branchId }: { branchId: string }) {
             const isPaid = order.payment_status === 'PAID';
             const isOpen = order.is_open;
             const isExpanded = expandedId === order.id;
+            
+            // Due Date Logic
+            const dueDate = new Date(order.due_date);
+            const isOverdue = new Date() > dueDate && isOpen;
 
             return (
               <div key={order.id} className="bg-white border border-slate-100 rounded-2xl shadow-sm overflow-hidden transition-all">
@@ -157,7 +153,6 @@ export default function OrderList({ branchId }: { branchId: string }) {
                   className="p-4 flex items-center justify-between cursor-pointer hover:bg-slate-50 transition-colors"
                 >
                   <div className="flex items-center gap-3">
-                    {/* Status Icon */}
                     <div className={`h-10 w-10 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
                       isOpen ? 'bg-blue-50 text-blue-600' : 'bg-slate-100 text-slate-400'
                     }`}>
@@ -184,6 +179,7 @@ export default function OrderList({ branchId }: { branchId: string }) {
                           {isPaid ? 'PAID' : 'UNPAID'}
                         </span>
                         <span>•</span>
+                        {/* Always show amount in header */}
                         <span>₹{order.final_amount}</span>
                       </p>
                     </div>
@@ -192,41 +188,76 @@ export default function OrderList({ branchId }: { branchId: string }) {
                   {isExpanded ? <ChevronUp size={18} className="text-slate-300" /> : <ChevronDown size={18} className="text-slate-300" />}
                 </div>
 
-                {/* EXPANDED DETAILS */}
+                {/* EXPANDED DETAILS (UPDATED FOR COLLECTION) */}
                 {isExpanded && (
                   <div className="px-4 pb-4 pt-0 border-t border-slate-50 bg-slate-50/30">
                     
+                    {/* 1. Key Info Row: Due Date & Phone */}
                     <div className="grid grid-cols-2 gap-4 py-3 mb-2">
-                       <div className="flex items-center gap-2 text-xs text-slate-500">
-                          <AlertCircle size={14} className="text-blue-400" /> 
-                          {order.customers?.phone}
+                       <div className="flex flex-col gap-1">
+                          <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Customer Contact</span>
+                          <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
+                            <AlertCircle size={14} className="text-blue-400" /> 
+                            {order.customers?.phone}
+                          </div>
                        </div>
-                       <div className="flex items-center gap-2 text-xs text-slate-500 justify-end">
-                          Items: <span className="font-bold text-slate-800">{order.total_piece_count}</span>
+                       <div className="flex flex-col gap-1 items-end">
+                          <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Due Date</span>
+                          <div className={`flex items-center gap-1.5 text-xs font-bold ${isOverdue ? 'text-red-600' : 'text-green-600'}`}>
+                             <CalendarDays size={14} />
+                             {dueDate.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}
+                          </div>
                        </div>
                     </div>
 
-                    {/* Simple Item Table */}
-                    <div className="bg-white rounded-xl border border-slate-100 p-2 mb-3">
+                    {/* 2. Operations Item Table (Quantity Focused) */}
+                    <div className="bg-white rounded-xl border border-slate-100 p-2 mb-3 shadow-xs">
                       <table className="w-full text-xs">
+                        <thead>
+                            <tr className="text-[10px] text-slate-400 border-b border-slate-50">
+                                <th className="text-left pb-2 pl-2 font-medium uppercase tracking-wider">Item Details</th>
+                                <th className="text-right pb-2 pr-2 font-medium uppercase tracking-wider">Qty</th>
+                            </tr>
+                        </thead>
                         <tbody className="divide-y divide-slate-50">
                           {order.order_items?.map((item: any, idx: number) => (
-                            <tr key={idx} className="text-slate-600">
-                              <td className="py-2 pl-2">
-                                <span className="font-medium">{item.item_name_snapshot}</span>
+                            <tr key={idx} className="text-slate-700">
+                              <td className="py-2.5 pl-2">
+                                <div className="font-bold text-sm text-slate-800">{item.item_name_snapshot}</div>
+                                {/* Show Service Type (Important for Sorting) */}
+                                <div className="text-[10px] font-medium text-slate-400 uppercase tracking-wide bg-slate-50 inline-block px-1.5 rounded mt-0.5">
+                                  {item.service_type}
+                                </div>
                               </td>
-                              <td className="py-2 text-right pr-2 font-mono">₹{item.total_price}</td>
+                              <td className="py-2.5 text-right pr-2">
+                                 {/* Big Bold Quantity */}
+                                 <span className="font-bold text-sm bg-blue-50 text-blue-700 px-2 py-1 rounded-lg">
+                                   x {item.quantity}
+                                 </span>
+                              </td>
                             </tr>
                           ))}
                         </tbody>
+                        
+                        {/* Footer: Totals */}
+                        <tfoot className="border-t border-slate-100 bg-slate-50/50">
+                           <tr>
+                              <td className="py-2 pl-2 text-[10px] font-bold text-slate-500 uppercase">
+                                 Total Items: <span className="text-slate-900 text-xs ml-1">{order.total_piece_count}</span>
+                              </td>
+                              <td className="py-2 pr-2 text-right text-[10px] font-bold text-slate-500 uppercase">
+                                 Total Bill: <span className="text-slate-900 text-xs ml-1">₹{order.final_amount}</span>
+                              </td>
+                           </tr>
+                        </tfoot>
                       </table>
                     </div>
 
-                    {/* Notes Section */}
+                    {/* 3. Notes Section (Unchanged) */}
                     <div className="bg-yellow-50/50 border border-yellow-100 rounded-xl p-3">
                       <div className="flex justify-between items-center mb-2">
                         <span className="text-[10px] font-bold text-yellow-700 uppercase tracking-widest flex items-center gap-1">
-                          <FileText size={10} /> Owner Note
+                          <FileText size={10} /> Note
                         </span>
                         {editingNoteId !== order.id && (
                           <button 
@@ -245,7 +276,7 @@ export default function OrderList({ branchId }: { branchId: string }) {
                             onChange={(e) => setNoteText(e.target.value)}
                             className="w-full p-2 text-xs bg-white border border-yellow-200 rounded-lg focus:ring-2 focus:ring-yellow-400 outline-none"
                             rows={2}
-                            placeholder="Type note here..."
+                            placeholder="Type special instructions..."
                           />
                           <div className="flex gap-2 justify-end">
                             <button onClick={() => setEditingNoteId(null)} className="text-xs text-slate-400 font-medium px-2">Cancel</button>
