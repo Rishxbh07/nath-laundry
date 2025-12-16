@@ -308,3 +308,21 @@ export async function processOrderHandover(orderId: string) {
   revalidatePath('/');
   return { success: true, message: "Order Closed Successfully" };
 }
+
+// --- 7. Mark as Packed (New Feature) ---
+export async function markOrderAsPacked(orderId: string) {
+  const supabase = await createClient();
+  
+  const { error } = await supabase
+    .from('orders')
+    .update({ status: 'READY' }) // Updates status from RECEIVED to READY
+    .eq('id', orderId);
+
+  if (error) {
+    console.error('Error marking order as packed:', error);
+    throw new Error('Failed to update order status');
+  }
+
+  revalidatePath('/orders');
+  return { success: true };
+}

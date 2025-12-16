@@ -3,9 +3,11 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Search, ChevronDown, ChevronUp, Save, FileText, 
-  CheckCircle2, AlertCircle, Clock, X, Filter, Calendar, Archive, CalendarDays
+  CheckCircle2, AlertCircle, Clock, X, Filter, Calendar, Archive, CalendarDays,
+  Package, CheckCircle, CheckCheck // Added CheckCheck for Delivered icon
 } from 'lucide-react';
 import { fetchAllOrders, saveOrderNote } from '@/app/actions/order-list';
+import { markOrderAsPacked } from '@/app/actions/order';
 import { useRouter } from 'next/navigation';
 
 // Debounce Helper
@@ -30,10 +32,12 @@ export default function OrderList({ branchId }: { branchId: string }) {
   const debouncedSearch = useDebounce(search, 500);
   const [dateFilter, setDateFilter] = useState(new Date().toISOString().split('T')[0]);
   const [showClosed, setShowClosed] = useState(false);
+  const [filter, setFilter] = useState<'ALL' | 'PACKED' | 'UNPACKED'>('ALL');
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [noteText, setNoteText] = useState('');
+  const [loadingId, setLoadingId] = useState<string | null>(null);
 
   // -- Fetch Data --
   useEffect(() => {
@@ -57,6 +61,29 @@ export default function OrderList({ branchId }: { branchId: string }) {
     setNoteText(order.notes || '');
     setEditingNoteId(order.id);
   };
+
+  const handleMarkAsPacked = async (e: React.MouseEvent, orderId: string) => {
+    e.stopPropagation();
+    setLoadingId(orderId);
+    try {
+      await markOrderAsPacked(orderId);
+      // Optimistic update
+      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: 'READY' } : o));
+    } catch (error) {
+      alert("Failed to update status");
+    } finally {
+      setLoadingId(null);
+    }
+  };
+
+  // Filter Logic
+  const filteredOrders = orders.filter((order) => {
+    if (filter === 'ALL') return true;
+    if (filter === 'PACKED') return order.status === 'READY';
+    // RECEIVED is default for "Processing". We also check it's not closed/delivered if looking strictly for unpacked active orders
+    if (filter === 'UNPACKED') return (order.status === 'RECEIVED' || order.status === 'RECIVED') && order.is_open;
+    return true;
+  });
 
   return (
     <div className="flex flex-col h-screen bg-slate-50">
@@ -93,29 +120,48 @@ export default function OrderList({ branchId }: { branchId: string }) {
         </div>
 
         {!search && (
-          <div className="flex gap-3">
-            <div className="flex-1 relative">
-               <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
-                 <Calendar size={14} />
-               </div>
-               <input 
-                 type="date" 
-                 value={dateFilter}
-                 onChange={(e) => setDateFilter(e.target.value)}
-                 className="w-full pl-9 pr-2 py-2.5 bg-slate-50 rounded-xl text-xs font-bold text-slate-700 outline-none border-0"
-               />
-            </div>
-            <button 
-              onClick={() => setShowClosed(!showClosed)}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all border ${
-                showClosed 
-                  ? 'bg-slate-800 text-white border-slate-800' 
-                  : 'bg-white text-slate-500 border-slate-200'
-              }`}
-            >
-              {showClosed ? <Archive size={14} /> : <Filter size={14} />}
-              {showClosed ? 'All' : 'Active'}
-            </button>
+          <div className="flex flex-col gap-3">
+             <div className="flex gap-3">
+                <div className="flex-1 relative">
+                   <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
+                     <Calendar size={14} />
+                   </div>
+                   <input 
+                     type="date" 
+                     value={dateFilter}
+                     onChange={(e) => setDateFilter(e.target.value)}
+                     className="w-full pl-9 pr-2 py-2.5 bg-slate-50 rounded-xl text-xs font-bold text-slate-700 outline-none border-0"
+                   />
+                </div>
+                <button 
+                  onClick={() => setShowClosed(!showClosed)}
+                  className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all border ${
+                    showClosed 
+                      ? 'bg-slate-800 text-white border-slate-800' 
+                      : 'bg-white text-slate-500 border-slate-200'
+                  }`}
+                >
+                  {showClosed ? <Archive size={14} /> : <Filter size={14} />}
+                  {showClosed ? 'All' : 'Active'}
+                </button>
+             </div>
+
+             <div className="flex p-1 space-x-1 bg-slate-100 rounded-xl">
+                {['ALL', 'UNPACKED', 'PACKED'].map((tab) => (
+                  <button
+                    key={tab}
+                    onClick={() => setFilter(tab as any)}
+                    className={`
+                      flex-1 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all
+                      ${filter === tab 
+                        ? 'bg-white text-blue-600 shadow-sm' 
+                        : 'text-slate-400 hover:text-slate-600'}
+                    `}
+                  >
+                    {tab}
+                  </button>
+                ))}
+             </div>
           </div>
         )}
       </div>
@@ -127,7 +173,7 @@ export default function OrderList({ branchId }: { branchId: string }) {
              <div className="animate-spin rounded-full h-6 w-6 border-2 border-current border-t-transparent"></div>
              <p className="text-xs font-bold">Loading...</p>
           </div>
-        ) : orders.length === 0 ? (
+        ) : filteredOrders.length === 0 ? (
           <div className="text-center py-20 text-slate-400 flex flex-col items-center gap-2">
             <div className="h-12 w-12 bg-slate-100 rounded-full flex items-center justify-center">
               <FileText size={20} />
@@ -135,10 +181,11 @@ export default function OrderList({ branchId }: { branchId: string }) {
             <p className="text-xs">No orders found.</p>
           </div>
         ) : (
-          orders.map((order) => {
+          filteredOrders.map((order) => {
             const isPaid = order.payment_status === 'PAID';
             const isOpen = order.is_open;
-            const isExpanded = expandedId === order.id;
+            const isPacked = order.status === 'READY';
+            const isClosed = !isOpen; // Derived from isOpen for clarity
             
             // Due Date Logic
             const dueDate = new Date(order.due_date);
@@ -149,14 +196,24 @@ export default function OrderList({ branchId }: { branchId: string }) {
                 
                 {/* CARD HEADER */}
                 <div 
-                  onClick={() => setExpandedId(isExpanded ? null : order.id)}
+                  onClick={() => setExpandedId(expandedId ? null : order.id)}
                   className="p-4 flex items-center justify-between cursor-pointer hover:bg-slate-50 transition-colors"
                 >
                   <div className="flex items-center gap-3">
+                    {/* Status Icon Logic */}
                     <div className={`h-10 w-10 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
-                      isOpen ? 'bg-blue-50 text-blue-600' : 'bg-slate-100 text-slate-400'
+                      isClosed 
+                        ? 'bg-slate-100 text-slate-400'
+                        : isPacked 
+                          ? 'bg-green-100 text-green-600' 
+                          : 'bg-amber-100 text-amber-600'
                     }`}>
-                      {isOpen ? <Clock size={18} /> : <CheckCircle2 size={18} />}
+                      {isClosed 
+                        ? <CheckCheck size={18} />
+                        : isPacked 
+                          ? <CheckCircle size={18} /> 
+                          : <Clock size={18} />
+                      }
                     </div>
                     
                     <div>
@@ -164,11 +221,13 @@ export default function OrderList({ branchId }: { branchId: string }) {
                         <span className="text-sm font-bold text-slate-800">{order.customers?.name}</span>
                         {/* Status Badge */}
                         <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase border ${
-                          isOpen 
-                            ? 'bg-blue-50 text-blue-700 border-blue-100' 
-                            : 'bg-slate-50 text-slate-500 border-slate-100'
+                           isClosed
+                           ? 'bg-slate-50 text-slate-500 border-slate-100'
+                           : isPacked 
+                             ? 'bg-green-50 text-green-700 border-green-200' 
+                             : 'bg-amber-50 text-amber-700 border-amber-200'
                         }`}>
-                          {isOpen ? 'Open' : 'Closed'}
+                          {isClosed ? 'Delivered' : isPacked ? 'Ready' : 'Processing'}
                         </span>
                       </div>
                       
@@ -179,20 +238,18 @@ export default function OrderList({ branchId }: { branchId: string }) {
                           {isPaid ? 'PAID' : 'UNPAID'}
                         </span>
                         <span>•</span>
-                        {/* Always show amount in header */}
                         <span>₹{order.final_amount}</span>
                       </p>
                     </div>
                   </div>
                   
-                  {isExpanded ? <ChevronUp size={18} className="text-slate-300" /> : <ChevronDown size={18} className="text-slate-300" />}
+                  {expandedId === order.id ? <ChevronUp size={18} className="text-slate-300" /> : <ChevronDown size={18} className="text-slate-300" />}
                 </div>
 
-                {/* EXPANDED DETAILS (UPDATED FOR COLLECTION) */}
-                {isExpanded && (
+                {/* EXPANDED DETAILS */}
+                {expandedId === order.id && (
                   <div className="px-4 pb-4 pt-0 border-t border-slate-50 bg-slate-50/30">
                     
-                    {/* 1. Key Info Row: Due Date & Phone */}
                     <div className="grid grid-cols-2 gap-4 py-3 mb-2">
                        <div className="flex flex-col gap-1">
                           <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Customer Contact</span>
@@ -210,7 +267,6 @@ export default function OrderList({ branchId }: { branchId: string }) {
                        </div>
                     </div>
 
-                    {/* 2. Operations Item Table (Quantity Focused) */}
                     <div className="bg-white rounded-xl border border-slate-100 p-2 mb-3 shadow-xs">
                       <table className="w-full text-xs">
                         <thead>
@@ -224,13 +280,11 @@ export default function OrderList({ branchId }: { branchId: string }) {
                             <tr key={idx} className="text-slate-700">
                               <td className="py-2.5 pl-2">
                                 <div className="font-bold text-sm text-slate-800">{item.item_name_snapshot}</div>
-                                {/* Show Service Type (Important for Sorting) */}
                                 <div className="text-[10px] font-medium text-slate-400 uppercase tracking-wide bg-slate-50 inline-block px-1.5 rounded mt-0.5">
                                   {item.service_type}
                                 </div>
                               </td>
                               <td className="py-2.5 text-right pr-2">
-                                 {/* Big Bold Quantity */}
                                  <span className="font-bold text-sm bg-blue-50 text-blue-700 px-2 py-1 rounded-lg">
                                    x {item.quantity}
                                  </span>
@@ -238,8 +292,6 @@ export default function OrderList({ branchId }: { branchId: string }) {
                             </tr>
                           ))}
                         </tbody>
-                        
-                        {/* Footer: Totals */}
                         <tfoot className="border-t border-slate-100 bg-slate-50/50">
                            <tr>
                               <td className="py-2 pl-2 text-[10px] font-bold text-slate-500 uppercase">
@@ -253,8 +305,7 @@ export default function OrderList({ branchId }: { branchId: string }) {
                       </table>
                     </div>
 
-                    {/* 3. Notes Section (Unchanged) */}
-                    <div className="bg-yellow-50/50 border border-yellow-100 rounded-xl p-3">
+                    <div className="bg-yellow-50/50 border border-yellow-100 rounded-xl p-3 mb-4">
                       <div className="flex justify-between items-center mb-2">
                         <span className="text-[10px] font-bold text-yellow-700 uppercase tracking-widest flex items-center gap-1">
                           <FileText size={10} /> Note
@@ -293,6 +344,34 @@ export default function OrderList({ branchId }: { branchId: string }) {
                           {order.notes || "No notes."}
                         </p>
                       )}
+                    </div>
+
+                    {/* 4. Action Buttons (Updated Condition) */}
+                    <div className="flex justify-end pt-2 border-t border-slate-100">
+                        {isClosed ? (
+                           <div className="flex items-center gap-2 text-slate-500 text-xs font-bold px-4 py-2.5 bg-slate-100 rounded-xl border border-slate-200 w-full justify-center">
+                              <CheckCheck size={16} />
+                              Order Delivered
+                           </div>
+                        ) : isPacked ? (
+                           <div className="flex items-center gap-2 text-green-600 text-xs font-bold px-4 py-2.5 bg-green-50 rounded-xl border border-green-200 w-full justify-center">
+                              <CheckCircle size={16} />
+                              Ready for Delivery
+                           </div>
+                        ) : (
+                          <button
+                            disabled={loadingId === order.id}
+                            onClick={(e) => handleMarkAsPacked(e, order.id)}
+                            className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2.5 rounded-xl text-xs font-bold active:scale-95 transition-transform disabled:opacity-50 disabled:cursor-not-allowed shadow-md shadow-blue-200 hover:bg-blue-700"
+                          >
+                            {loadingId === order.id ? (
+                              <span className="animate-spin h-4 w-4 border-2 border-white/30 border-t-white rounded-full"></span> 
+                            ) : (
+                              <Package size={16} />
+                            )}
+                            Mark as Packed
+                          </button>
+                        )}
                     </div>
 
                   </div>

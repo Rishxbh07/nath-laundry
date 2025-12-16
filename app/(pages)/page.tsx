@@ -106,7 +106,7 @@ export default async function Home() {
 
         <div className="flex flex-col items-center justify-center mt-4 text-center space-y-2 opacity-40">
           <p className="text-slate-400 text-[10px] font-medium uppercase tracking-widest">
-            App version-v1.02 updated on 12/14/25 @3.20 AM 
+            App version-v1.02 updated on 12/16/25 @5:30 AM 
           </p>
         </div>
 
