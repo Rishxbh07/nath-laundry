@@ -221,4 +221,4 @@ CREATE TABLE public.special_item_rates (
   CONSTRAINT special_item_rates_pkey PRIMARY KEY (id),
   CONSTRAINT special_item_rates_branch_id_fkey FOREIGN KEY (branch_id) REFERENCES public.branches(id),
   CONSTRAINT special_item_rates_item_id_fkey FOREIGN KEY (item_id) REFERENCES public.laundry_items(id)
-);
+); 

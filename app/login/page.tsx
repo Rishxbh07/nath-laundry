@@ -5,6 +5,7 @@ import { useActionState, useState } from 'react' // Import useState
 import { Lock } from 'lucide-react'
 import Link from 'next/link' // Import Link
 
+
 const initialState = {
   error: '',
 }
@@ -102,6 +103,13 @@ export default function LoginPage() {
             {isPending ? 'Verifying...' : 'Authenticate'}
           </button>
         </form>
+
+        <div className="mt-6 text-center text-sm text-gray-500">
+          Don't have an account?{' '}
+          <Link href="/signup" className="text-blue-600 font-semibold hover:underline">
+            Create one here
+          </Link>
+        </div>
 
         <p className="mt-8 text-center text-[10px] text-slate-300 leading-relaxed">
           Unauthorized access is prohibited.<br/>

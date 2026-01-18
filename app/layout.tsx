@@ -3,6 +3,7 @@ import { Geist, Geist_Mono, Comfortaa } from "next/font/google";
 import "./globals.css";
 import BottomNav from "./components/BottomNav";
 import { createClient } from "@/app/utils/supabase/server"; // Import Supabase client
+import { Toaster } from 'sonner';
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -72,6 +73,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} ${comfortaa.variable} antialiased bg-slate-50 text-slate-800`}
       >
         {children}
+        <Toaster position="top-center" />
         <BottomNav />
       </body>
     </html>
