@@ -88,8 +88,8 @@ CREATE TABLE public.order_items (
   total_price numeric NOT NULL DEFAULT 0,
   is_chargeable boolean DEFAULT true,
   CONSTRAINT order_items_pkey PRIMARY KEY (id),
-  CONSTRAINT order_items_order_id_fkey FOREIGN KEY (order_id) REFERENCES public.orders(id),
-  CONSTRAINT order_items_item_id_fkey FOREIGN KEY (item_id) REFERENCES public.laundry_items(id)
+  CONSTRAINT order_items_item_id_fkey FOREIGN KEY (item_id) REFERENCES public.laundry_items(id),
+  CONSTRAINT order_items_order_id_fkey FOREIGN KEY (order_id) REFERENCES public.orders(id)
 );
 CREATE TABLE public.orders (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -113,11 +113,33 @@ CREATE TABLE public.orders (
   bill_status USER-DEFINED NOT NULL DEFAULT 'OPEN'::bill_status_type,
   total_piece_count integer DEFAULT 0,
   total_weight numeric DEFAULT 0,
+  notes text DEFAULT ''::text,
   CONSTRAINT orders_pkey PRIMARY KEY (id),
   CONSTRAINT orders_branch_id_fkey FOREIGN KEY (branch_id) REFERENCES public.branches(id),
-  CONSTRAINT orders_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.customers(id),
+  CONSTRAINT orders_closed_by_fkey FOREIGN KEY (closed_by) REFERENCES auth.users(id),
   CONSTRAINT orders_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id),
-  CONSTRAINT orders_closed_by_fkey FOREIGN KEY (closed_by) REFERENCES auth.users(id)
+  CONSTRAINT orders_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.customers(id)
+);
+CREATE TABLE public.pricing_rules (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  branch_id uuid NOT NULL,
+  bucket USER-DEFINED NOT NULL,
+  service_type text NOT NULL,
+  item_id uuid,
+  min_quantity integer DEFAULT 0,
+  max_quantity integer,
+  min_weight numeric DEFAULT 0,
+  max_weight numeric,
+  calculation_type USER-DEFINED NOT NULL,
+  price numeric NOT NULL DEFAULT 0,
+  min_price numeric DEFAULT 0,
+  base_charge numeric DEFAULT 0,
+  priority integer NOT NULL DEFAULT 10,
+  is_active boolean NOT NULL DEFAULT true,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT pricing_rules_pkey PRIMARY KEY (id),
+  CONSTRAINT pricing_rules_branch_id_fkey FOREIGN KEY (branch_id) REFERENCES public.branches(id),
+  CONSTRAINT pricing_rules_item_id_fkey FOREIGN KEY (item_id) REFERENCES public.laundry_items(id)
 );
 CREATE TABLE public.profiles (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -127,8 +149,64 @@ CREATE TABLE public.profiles (
   role USER-DEFINED NOT NULL DEFAULT 'USER'::app_role,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT profiles_pkey PRIMARY KEY (id),
-  CONSTRAINT profiles_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
-  CONSTRAINT profiles_branch_id_fkey FOREIGN KEY (branch_id) REFERENCES public.branches(id)
+  CONSTRAINT profiles_branch_id_fkey FOREIGN KEY (branch_id) REFERENCES public.branches(id),
+  CONSTRAINT profiles_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);
+CREATE TABLE public.saas_item_catalog (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  name text NOT NULL,
+  category text,
+  is_special_suggestion boolean DEFAULT false,
+  CONSTRAINT saas_item_catalog_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.saas_pricing_rules (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  branch_id uuid NOT NULL,
+  service_id uuid,
+  item_catalog_id uuid,
+  min_qty integer,
+  max_qty integer,
+  min_weight numeric,
+  rate numeric NOT NULL,
+  rate_type text CHECK (rate_type = ANY (ARRAY['FIXED'::text, 'PER_UNIT'::text, 'PER_WEIGHT'::text])),
+  is_active boolean DEFAULT true,
+  CONSTRAINT saas_pricing_rules_pkey PRIMARY KEY (id),
+  CONSTRAINT saas_pricing_rules_branch_id_fkey FOREIGN KEY (branch_id) REFERENCES public.branches(id),
+  CONSTRAINT saas_pricing_rules_service_id_fkey FOREIGN KEY (service_id) REFERENCES public.saas_shop_services(id),
+  CONSTRAINT saas_pricing_rules_item_catalog_id_fkey FOREIGN KEY (item_catalog_id) REFERENCES public.saas_item_catalog(id)
+);
+CREATE TABLE public.saas_service_catalog (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  name text NOT NULL,
+  default_category text CHECK (default_category = ANY (ARRAY['BULK'::text, 'ADDON'::text])),
+  description text,
+  CONSTRAINT saas_service_catalog_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.saas_shop_services (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  branch_id uuid NOT NULL,
+  catalog_id uuid,
+  name text NOT NULL,
+  category text CHECK (category = ANY (ARRAY['BULK'::text, 'ADDON'::text])),
+  priority integer DEFAULT 10,
+  pricing_unit text CHECK (pricing_unit = ANY (ARRAY['KG'::text, 'PC'::text])),
+  default_rate numeric DEFAULT 0,
+  is_active boolean DEFAULT true,
+  CONSTRAINT saas_shop_services_pkey PRIMARY KEY (id),
+  CONSTRAINT saas_shop_services_branch_id_fkey FOREIGN KEY (branch_id) REFERENCES public.branches(id),
+  CONSTRAINT saas_shop_services_catalog_id_fkey FOREIGN KEY (catalog_id) REFERENCES public.saas_service_catalog(id)
+);
+CREATE TABLE public.saas_shop_settings (
+  branch_id uuid NOT NULL,
+  is_pro_mode boolean DEFAULT false,
+  global_unit text DEFAULT 'KG'::text CHECK (global_unit = ANY (ARRAY['KG'::text, 'PC'::text])),
+  home_delivery_available boolean DEFAULT false,
+  home_delivery_rate numeric DEFAULT 0,
+  min_order_amount numeric DEFAULT 0,
+  express_available boolean DEFAULT false,
+  express_markup_percent numeric DEFAULT 0,
+  CONSTRAINT saas_shop_settings_pkey PRIMARY KEY (branch_id),
+  CONSTRAINT saas_shop_settings_branch_id_fkey FOREIGN KEY (branch_id) REFERENCES public.branches(id)
 );
 CREATE TABLE public.special_item_rates (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
