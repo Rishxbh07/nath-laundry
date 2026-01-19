@@ -3,7 +3,9 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 
-export async function createShopAction(formData: FormData) {
+// ... existing imports
+
+export async function saveSettingsAction(formData: FormData) {
   const cookieStore = await cookies()
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -11,45 +13,38 @@ export async function createShopAction(formData: FormData) {
     { cookies: { getAll: () => cookieStore.getAll(), setAll: (c) => c.forEach(v => cookieStore.set(v)) } }
   )
 
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { success: false, error: "Unauthorized" }
+  // 1. Get Billing Preferences from Form
+  const billingMode = formData.get('billingMode') as string // 'MANUAL' or 'AUTOMATIC'
+  
+  // Call Function 1: Save Settings
+  const { error: settingsError } = await supabase.rpc('save_shop_settings', {
+    p_billing_mode: billingMode,
+    p_delivery_enabled: true // Example
+  })
 
-  const shopName = formData.get('shopName') as string
-  const address = formData.get('address') as string
-  const phone1 = formData.get('phone1') as string
-  const phone2 = formData.get('phone2') as string
+  if (settingsError) return { success: false, error: settingsError.message }
 
-  // 1. Format Phone (As per schema data: "8793741220/8767537734")
-  const combinedPhone = phone2 ? `${phone1}/${phone2}` : phone1
+  // 2. Get Services (Assuming you pass them as a stringified JSON or structured form fields)
+  // For standard form fields, you might loop through them:
+  const services = [
+    { name: 'Wash & Fold', price: Number(formData.get('price_wf')), unit: 'kg' },
+    { name: 'Iron Only', price: Number(formData.get('price_iron')), unit: 'piece' },
+    // ... add others
+  ]
 
-  // 2. Generate Branch Code (Schema requires a UNIQUE 'code' column)
-  // Logic: First 3 letters of name (uppercase) + random 4 digits
-  const codePrefix = shopName.substring(0, 3).toUpperCase().replace(/[^A-Z]/g, 'SHP')
-  const randomNum = Math.floor(1000 + Math.random() * 9000)
-  const generatedCode = `${codePrefix}-${randomNum}`
-
-  // 3. Insert Branch
-  const { data: branch, error: branchError } = await supabase
-    .from('branches')
-    .insert({ 
-        name: shopName, 
-        address: address, // Correct column name
-        phone: combinedPhone,
-        code: generatedCode, // Required by schema
-        is_active: true
+  // Call Function 2: Loop and Save Services
+  for (const service of services) {
+    const { error: serviceError } = await supabase.rpc('save_shop_service', {
+      p_service_name: service.name,
+      p_price: service.price,
+      p_unit: service.unit
     })
-    .select('id')
-    .single()
+    
+    if (serviceError) {
+      console.error('Service Save Error:', service.name, serviceError)
+      return { success: false, error: `Failed to save ${service.name}` }
+    }
+  }
 
-  if (branchError) return { success: false, error: branchError.message }
-
-  // 4. Update User Profile
-  const { error: profileError } = await supabase
-    .from('profiles')
-    .update({ branch_id: branch.id })
-    .eq('user_id', user.id)
-
-  if (profileError) return { success: false, error: "Profile update failed" }
-
-  return { success: true, branchId: branch.id }
+  return { success: true }
 }
