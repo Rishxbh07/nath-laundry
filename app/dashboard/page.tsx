@@ -1,11 +1,12 @@
 import React, { Suspense } from 'react';
 import { createClient } from '@/app/utils/supabase/server';
 import { redirect } from 'next/navigation';
+import Link from 'next/link'; // Import Link
+import { Calendar, Building2, ArrowRight } from 'lucide-react'; // Import Icons
 import Header from '../components/Header';
 import DashboardFilters from '../components/DashboardFilters';
 import { StatsWrapper, PopularWrapper } from '../components/DashboardWrappers';
 import { DateRange } from './actions';
-import { Calendar } from 'lucide-react';
 
 // --- Loading Skeletons ---
 function StatsSkeleton() {
@@ -16,10 +17,6 @@ function StatsSkeleton() {
         <div className="h-32 bg-slate-200 rounded-3xl" />
       </div>
       <div className="h-32 bg-slate-200 rounded-3xl" />
-      <div className="grid grid-cols-2 gap-4">
-        <div className="h-32 bg-slate-200 rounded-3xl" />
-        <div className="h-32 bg-slate-200 rounded-3xl" />
-      </div>
     </div>
   );
 }
@@ -37,15 +34,35 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('branch_id')
+    .select('branch_id, full_name')
     .eq('user_id', user.id)
     .single();
 
+  // 2. EMPTY STATE: No Branch -> Show Setup UI
   if (!profile?.branch_id) {
-    return <div className="p-10 text-center text-slate-400">No branch assigned.</div>;
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+        <div className="max-w-xl w-full bg-white rounded-3xl shadow-xl border border-slate-100 p-10 text-center">
+            <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-6 text-blue-600">
+                <Building2 size={40} />
+            </div>
+            <h1 className="text-3xl font-bold text-slate-800 mb-3">Welcome, {profile?.full_name || 'Partner'}!</h1>
+            <p className="text-slate-500 mb-8 text-lg leading-relaxed">
+                You haven't set up your shop yet. Create your laundry branch to start managing orders.
+            </p>
+            
+            <Link 
+                href="/setup" 
+                className="inline-flex items-center justify-center gap-2 bg-blue-600 text-white px-8 py-4 rounded-xl font-bold text-lg hover:bg-blue-700 transition-all shadow-lg shadow-blue-600/20 hover:scale-105"
+            >
+                Set Up My Shop <ArrowRight size={20} />
+            </Link>
+        </div>
+      </div>
+    );
   }
 
-  // 2. Read Filter from URL (Defaults to TODAY)
+  // 3. Normal Dashboard (Filtered by Branch ID)
   const resolvedParams = await searchParams;
   const filter = (resolvedParams.range as DateRange) || 'TODAY';
 
@@ -61,8 +78,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       <Header />
       
       <div className="space-y-6">
-        
-        {/* Header & Filters (Loads Instantly) */}
         <div className="flex flex-col gap-4 animate-in fade-in slide-in-from-top-2">
           <div>
             <h1 className="text-2xl font-bold text-slate-800">Overview</h1>
@@ -73,8 +88,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           <DashboardFilters />
         </div>
 
-        {/* Streaming Content */}
-        {/* The 'key' prop forces React to re-trigger Suspense when filter changes */}
         <Suspense key={filter} fallback={<StatsSkeleton />}>
           <StatsWrapper branchId={profile.branch_id} filter={filter} />
         </Suspense>
@@ -82,7 +95,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         <Suspense fallback={<PopularSkeleton />}>
           <PopularWrapper branchId={profile.branch_id} />
         </Suspense>
-
       </div>
     </main>
   );

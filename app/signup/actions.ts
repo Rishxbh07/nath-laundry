@@ -1,59 +1,45 @@
 'use server'
 
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
+import { createClient as createAdminClient } from '@supabase/supabase-js'
 
 export async function signUpAction(formData: FormData) {
-  const cookieStore = await cookies()
-  const supabase = createServerClient(
+  // Use Admin Client to bypass RLS for initial user creation
+  // Ensure SUPABASE_SERVICE_ROLE_KEY is in your .env
+  const supabaseAdmin = createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    { cookies: { getAll: () => cookieStore.getAll() } }
+    process.env.SUPABASE_SERVICE_ROLE_KEY! 
   )
 
   const email = formData.get('email') as string
   const password = formData.get('password') as string
   const fullName = formData.get('fullName') as string
-  const shopName = formData.get('shopName') as string
-  const location = formData.get('location') as string
+  const phone = formData.get('phone') as string
 
-  // 1. Create Supabase User
-  const { data: authData, error: authError } = await supabase.auth.signUp({
+  // 1. Create Auth User
+  const { data: authData, error: authError } = await supabaseAdmin.auth.signUp({
     email,
     password,
     options: { data: { full_name: fullName } }
   })
 
   if (authError) return { success: false, error: authError.message }
-  if (!authData.user) return { success: false, error: "No user created" }
+  if (!authData.user) return { success: false, error: "User creation failed" }
 
-  const userId = authData.user.id
-
-  // 2. Create the Branch
-  const { data: branchData, error: branchError } = await supabase
-    .from('branches')
-    .insert({ name: shopName, location: location })
-    .select('id')
-    .single()
-
-  if (branchError) {
-    console.error("Branch Error:", branchError)
-    return { success: false, error: "Could not create shop." }
-  }
-
-  // 3. Link User to Branch in Profile
-  const { error: profileError } = await supabase
+  // 2. Create Profile (Empty Branch ID)
+  const { error: profileError } = await supabaseAdmin
     .from('profiles')
     .upsert({
-      user_id: userId,
-      branch_id: branchData.id,
+      user_id: authData.user.id,
       full_name: fullName,
-      role: 'ADMIN'
+      email: email,
+      role: 'ADMIN', // User is an admin of their future shop
+      // phone: phone // Uncomment if column exists
     })
 
   if (profileError) {
-     return { success: false, error: "Profile setup failed." }
+    console.error("Profile Error:", profileError)
+    // Don't block success, dashboard can handle missing profiles
   }
 
-  return { success: true, branchId: branchData.id }
+  return { success: true }
 }
