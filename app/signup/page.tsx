@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Loader2, User, Mail, Lock, ArrowRight, Phone } from 'lucide-react'
 import { toast } from 'sonner'
-import { signUpAction } from './actions'
+import { signUpAction } from './actions' // This now matches the export
 
 export default function SignUpPage() {
   const router = useRouter()

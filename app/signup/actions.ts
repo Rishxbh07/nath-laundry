@@ -1,13 +1,19 @@
 'use server'
 
-import { createClient as createAdminClient } from '@supabase/supabase-js'
+import { createServerClient } from '@supabase/ssr'
+import { cookies } from 'next/headers'
 
 export async function signUpAction(formData: FormData) {
-  // Use Admin Client to bypass RLS for initial user creation
-  // Ensure SUPABASE_SERVICE_ROLE_KEY is in your .env
-  const supabaseAdmin = createAdminClient(
+  const cookieStore = await cookies()
+  const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY! 
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll: () => cookieStore.getAll(),
+        setAll: (c) => c.forEach((v) => cookieStore.set(v)),
+      },
+    }
   )
 
   const email = formData.get('email') as string
@@ -15,31 +21,24 @@ export async function signUpAction(formData: FormData) {
   const fullName = formData.get('fullName') as string
   const phone = formData.get('phone') as string
 
-  // 1. Create Auth User
-  const { data: authData, error: authError } = await supabaseAdmin.auth.signUp({
+  // 1. Standard Sign Up
+  // We pass 'full_name' and 'phone' in metadata so the Database Trigger picks them up
+  const { error } = await supabase.auth.signUp({
     email,
     password,
-    options: { data: { full_name: fullName } }
+    options: {
+      data: {
+        full_name: fullName,
+        phone: phone, // Passed to metadata
+      },
+    },
   })
 
-  if (authError) return { success: false, error: authError.message }
-  if (!authData.user) return { success: false, error: "User creation failed" }
-
-  // 2. Create Profile (Empty Branch ID)
-  const { error: profileError } = await supabaseAdmin
-    .from('profiles')
-    .upsert({
-      user_id: authData.user.id,
-      full_name: fullName,
-      email: email,
-      role: 'ADMIN', // User is an admin of their future shop
-      // phone: phone // Uncomment if column exists
-    })
-
-  if (profileError) {
-    console.error("Profile Error:", profileError)
-    // Don't block success, dashboard can handle missing profiles
+  if (error) {
+    return { success: false, error: error.message }
   }
 
+  // 2. Success
+  // No need to manually create a profile. The DB Trigger does it for us.
   return { success: true }
 }

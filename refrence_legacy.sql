@@ -170,6 +170,10 @@ CREATE TABLE public.saas_pricing_rules (
   rate numeric NOT NULL,
   rate_type text CHECK (rate_type = ANY (ARRAY['FIXED'::text, 'PER_UNIT'::text, 'PER_WEIGHT'::text])),
   is_active boolean DEFAULT true,
+  has_threshold boolean DEFAULT false,
+  below_threshold_rate numeric DEFAULT 0,
+  threshold_weight_qty numeric DEFAULT 0,
+  threshold_weight numeric DEFAULT 0,
   CONSTRAINT saas_pricing_rules_pkey PRIMARY KEY (id),
   CONSTRAINT saas_pricing_rules_branch_id_fkey FOREIGN KEY (branch_id) REFERENCES public.branches(id),
   CONSTRAINT saas_pricing_rules_service_id_fkey FOREIGN KEY (service_id) REFERENCES public.saas_shop_services(id),
@@ -221,4 +225,4 @@ CREATE TABLE public.special_item_rates (
   CONSTRAINT special_item_rates_pkey PRIMARY KEY (id),
   CONSTRAINT special_item_rates_branch_id_fkey FOREIGN KEY (branch_id) REFERENCES public.branches(id),
   CONSTRAINT special_item_rates_item_id_fkey FOREIGN KEY (item_id) REFERENCES public.laundry_items(id)
-); 
+);

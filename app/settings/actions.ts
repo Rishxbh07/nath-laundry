@@ -4,7 +4,7 @@ import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { ShopSettingsFormValues } from './schema'
 
-// --- FETCH SETTINGS ---
+// --- 1. FETCH SETTINGS ---
 export async function getShopSettings(branchId: string) {
   const cookieStore = await cookies()
   const supabase = createServerClient(
@@ -13,51 +13,81 @@ export async function getShopSettings(branchId: string) {
     { cookies: { getAll: () => cookieStore.getAll() } }
   )
 
+  // A. Fetch Basic Settings
   const { data: settings } = await supabase
-    .from('saas_shop_settings')
+    .from('shop_settings')
     .select('*')
     .eq('branch_id', branchId)
     .single()
 
-  const { data: services } = await supabase
-    .from('saas_shop_services')
+  // B. Fetch Services
+  const { data: servicesRaw } = await supabase
+    .from('shop_services')
     .select('*')
     .eq('branch_id', branchId)
-    .order('priority', { ascending: true }) // Ensure priority column exists or remove order
-
-  const { data: rules } = await supabase
-    .from('saas_pricing_rules')
-    .select(`*, saas_item_catalog ( name )`)
-    .eq('branch_id', branchId)
-
-  const { data: catalog } = await supabase
-    .from('saas_item_catalog')
-    .select('*')
     .order('name')
+
+  // C. Fetch Item Rules (JSONB)
+  const { data: rules } = await supabase
+    .from('shop_item_rules')
+    .select(`
+      *,
+      item_catalog ( name )
+    `)
+    .eq('branch_id', branchId)
+
+  // D. Fetch Catalog (Global + Custom)
+  const { data: catalog } = await supabase
+    .from('item_catalog')
+    .select('*')
+    .or(`branch_id.is.null,branch_id.eq.${branchId}`)
+    .order('name')
+
+  // --- MAPPING ---
+
+  // 1. Map Services (DB columns -> Form fields)
+  const services = (servicesRaw || []).map((s: any) => ({
+    id: s.id,
+    name: s.name,
+    category: s.category || 'ADDON',
+    pricing_unit: s.unit || 'PC',      // DB 'unit' -> Form 'pricing_unit'
+    default_rate: s.price || 0,        // DB 'price' -> Form 'default_rate'
+    is_active: s.is_active,
+    is_default: false 
+  }))
+
+  // 2. Map Special Items (JSONB -> Flat Form Array)
+  // We unpack the 'services_config' JSON array into individual rows for the UI
+  const special_items = (rules || []).flatMap((r: any) => {
+    const configs = Array.isArray(r.services_config) ? r.services_config : [];
+    
+    return configs.map((conf: any) => ({
+      // We generate a composite ID or leave undefined so the form handles it
+      item_catalog_id: r.item_catalog_id,
+      name: r.item_catalog?.name || 'Unknown',
+      service_id: conf.service_id,
+      rate: conf.rate,
+      rate_type: conf.rate_type,
+      has_threshold: conf.has_threshold,
+      threshold_weight: conf.threshold_weight,
+      below_threshold_rate: conf.below_threshold_rate,
+      is_active: r.is_active
+    }));
+  });
 
   return {
     settings: {
       branch_id: branchId,
-      is_pro_mode: settings?.is_pro_mode ?? false,
-      services: services || [],
-      special_items: rules?.map(r => ({
-        id: r.id,
-        item_catalog_id: r.item_catalog_id,
-        name: r.saas_item_catalog?.name,
-        service_id: r.service_id,
-        rate: r.rate,
-        rate_type: r.rate_type || 'PER_UNIT',
-        has_threshold: r.has_threshold || false,
-        threshold_weight: r.threshold_weight || 0,
-        below_threshold_rate: r.below_threshold_rate || 0,
-        is_active: r.is_active
-      })) || []
+      billing_mode: settings?.billing_mode || 'MANUAL',
+      delivery_enabled: settings?.delivery_enabled || false,
+      services: services,
+      special_items: special_items
     },
     catalog: catalog || []
   }
 }
 
-// --- SAVE SETTINGS (FIXED) ---
+// --- 2. SAVE SETTINGS ---
 export async function updateShopSettings(data: ShopSettingsFormValues) {
   const cookieStore = await cookies()
   const supabase = createServerClient(
@@ -67,90 +97,108 @@ export async function updateShopSettings(data: ShopSettingsFormValues) {
   )
 
   try {
-    // 1. Settings (Use explicit Conflict target)
+    // A. Update Shop Settings
     const { error: settingsError } = await supabase
-      .from('saas_shop_settings')
+      .from('shop_settings') 
       .upsert({
         branch_id: data.branch_id,
-        is_pro_mode: data.is_pro_mode,
-        global_unit: 'KG', 
+        billing_mode: data.billing_mode, 
+        delivery_enabled: data.delivery_enabled
       }, { onConflict: 'branch_id' })
     
     if (settingsError) throw new Error(`Settings Error: ${settingsError.message}`)
 
-    // 2. Services
+    // B. Update Services
     for (const service of data.services) {
         const payload = {
              branch_id: data.branch_id,
              name: service.name,
-             category: service.category,
-             pricing_unit: service.pricing_unit,
-             default_rate: service.default_rate,
+             price: service.default_rate, // Map Form 'default_rate' -> DB 'price'
+             unit: service.pricing_unit,  // Map Form 'pricing_unit' -> DB 'unit'
+             category: service.category || 'ADDON',
              is_active: service.is_active
         }
 
         if (service.id && service.id.length > 10) {
-            // Update Existing
-            const { error } = await supabase
-              .from('saas_shop_services')
-              .update(payload)
-              .eq('id', service.id)
-            if (error) throw new Error(`Service Update Error: ${error.message}`)
+            await supabase.from('shop_services').update(payload).eq('id', service.id)
         } else {
-            // Insert New
-            const { error } = await supabase
-              .from('saas_shop_services')
-              .insert(payload)
-            if (error) throw new Error(`Service Insert Error: ${error.message}`)
+            await supabase.from('shop_services').insert(payload)
         }
     }
 
-    // 3. Special Rules (Clean Empty Strings!)
-    for (const rule of data.special_items) {
-      
-      // SANITIZE: Convert empty strings to undefined so DB doesn't crash on UUID check
-      const cleanServiceId = (rule.service_id && rule.service_id.length > 5) ? rule.service_id : null;
-      
-      if (!cleanServiceId) {
-         // Skip rules that have no service linked (prevents crash)
-         console.warn("Skipping rule because Service ID is missing:", rule.name);
-         continue; 
-      }
+    // C. Update Special Rules (Flat Form Array -> JSONB)
+    
+    // 1. Group the flat rules by Item ID
+    const groupedRules = new Map<string, any[]>();
 
-      const { error } = await supabase
-        .from('saas_pricing_rules')
-        .upsert({
-          id: (rule.id && rule.id.length > 10) ? rule.id : undefined,
-          branch_id: data.branch_id,
-          service_id: cleanServiceId, // use clean ID
-          item_catalog_id: rule.item_catalog_id,
-          rate: rule.rate,
-          rate_type: rule.rate_type,
-          has_threshold: rule.has_threshold,
-          threshold_weight: rule.threshold_weight,
-          below_threshold_rate: rule.below_threshold_rate,
-          is_active: rule.is_active,
-        })
-       
-       if (error) throw new Error(`Rule Error (${rule.name}): ${error.message}`)
+    for (const rule of data.special_items) {
+        if (!rule.service_id) continue; // Skip invalid rows
+
+        if (!groupedRules.has(rule.item_catalog_id)) {
+            groupedRules.set(rule.item_catalog_id, []);
+        }
+
+        groupedRules.get(rule.item_catalog_id)?.push({
+            service_id: rule.service_id,
+            rate: rule.rate,
+            rate_type: rule.rate_type,
+            has_threshold: rule.has_threshold,
+            threshold_weight: rule.threshold_weight || 0,
+            below_threshold_rate: rule.below_threshold_rate || 0
+        });
+    }
+
+    // 2. Upsert each Item's configuration as one JSONB row
+    for (const [itemId, configs] of groupedRules) {
+        const payload = {
+            branch_id: data.branch_id,
+            item_catalog_id: itemId,
+            services_config: configs, // Save the array as JSON
+            is_active: true
+        }
+
+        const { error } = await supabase
+            .from('shop_item_rules')
+            .upsert(payload, { onConflict: 'branch_id, item_catalog_id' })
+        
+        if (error) throw new Error(`Rule Error: ${error.message}`)
     }
 
     return { success: true }
   } catch (error: any) {
     console.error("Save Error:", error)
-    // Return the actual error message to the UI
-    return { success: false, error: error.message || "Unknown Database Error" }
+    return { success: false, error: error.message }
   }
 }
 
-// --- CATALOG ITEM ---
+// --- 3. CREATE CATALOG ITEM ---
 export async function createCatalogItem(name: string, category: string) {
     const cookieStore = await cookies()
-    const supabase = createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { cookies: { getAll: () => cookieStore.getAll() } })
+    const supabase = createServerClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!, 
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, 
+        { cookies: { getAll: () => cookieStore.getAll() } }
+    )
     
+    const { data: { user } } = await supabase.auth.getUser()
+    
+    // Get Branch
+    const { data: branch } = await supabase
+        .from('branches')
+        .select('id')
+        .eq('owner_id', user?.id)
+        .single()
+
+    if (!branch) throw new Error("Branch not found")
+
+    // Create Item (Linked to Branch)
     const { data, error } = await supabase
-        .from('saas_item_catalog')
-        .insert({ name, category, is_special_suggestion: true })
+        .from('item_catalog')
+        .insert({ 
+            name, 
+            category, 
+            branch_id: branch.id 
+        })
         .select()
         .single()
         

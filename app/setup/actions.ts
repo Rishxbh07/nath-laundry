@@ -3,9 +3,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 
-// ... existing imports
-
-export async function saveSettingsAction(formData: FormData) {
+export async function createShopAction(formData: FormData) {
   const cookieStore = await cookies()
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -13,38 +11,57 @@ export async function saveSettingsAction(formData: FormData) {
     { cookies: { getAll: () => cookieStore.getAll(), setAll: (c) => c.forEach(v => cookieStore.set(v)) } }
   )
 
-  // 1. Get Billing Preferences from Form
-  const billingMode = formData.get('billingMode') as string // 'MANUAL' or 'AUTOMATIC'
-  
-  // Call Function 1: Save Settings
-  const { error: settingsError } = await supabase.rpc('save_shop_settings', {
-    p_billing_mode: billingMode,
-    p_delivery_enabled: true // Example
-  })
+  // 1. Auth Check
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { success: false, error: "Please log in first." }
 
-  if (settingsError) return { success: false, error: settingsError.message }
+  // 2. Create Branch
+  const shopName = formData.get('shopName') as string
+  const shopCode = (shopName.substring(0, 3) + Math.floor(Math.random() * 1000)).toUpperCase()
 
-  // 2. Get Services (Assuming you pass them as a stringified JSON or structured form fields)
-  // For standard form fields, you might loop through them:
-  const services = [
-    { name: 'Wash & Fold', price: Number(formData.get('price_wf')), unit: 'kg' },
-    { name: 'Iron Only', price: Number(formData.get('price_iron')), unit: 'piece' },
-    // ... add others
-  ]
-
-  // Call Function 2: Loop and Save Services
-  for (const service of services) {
-    const { error: serviceError } = await supabase.rpc('save_shop_service', {
-      p_service_name: service.name,
-      p_price: service.price,
-      p_unit: service.unit
+  const { data: branch, error: branchError } = await supabase
+    .from('branches')
+    .insert({
+      owner_id: user.id,
+      name: shopName,
+      address: formData.get('address'),
+      phone: formData.get('phone1'),
+      code: shopCode
     })
-    
-    if (serviceError) {
-      console.error('Service Save Error:', service.name, serviceError)
-      return { success: false, error: `Failed to save ${service.name}` }
-    }
+    .select('id')
+    .single()
+
+  if (branchError) {
+    console.error("Branch Creation Error:", branchError)
+    return { success: false, error: branchError.message }
   }
 
-  return { success: true }
+  // 3. Create Settings (TARGETING NEW TABLE: shop_settings)
+  const { error: settingsError } = await supabase
+    .from('shop_settings') // <--- FIXED TABLE NAME
+    .insert({
+      branch_id: branch.id,
+      billing_mode: formData.get('billingMode') || 'MANUAL',
+      delivery_enabled: formData.get('delivery') === 'on'
+    })
+
+  if (settingsError) {
+     console.error("Settings Error:", settingsError)
+     return { success: false, error: "Failed to save settings" }
+  }
+
+  // 4. Create Services (TARGETING NEW TABLE: shop_services)
+  const services = [
+    { branch_id: branch.id, name: 'Wash & Fold', price: Number(formData.get('price_wf')) || 50, unit: 'KG', category: 'BULK' },
+    { branch_id: branch.id, name: 'Iron Only', price: Number(formData.get('price_iron')) || 10, unit: 'PC', category: 'ADDON' },
+    { branch_id: branch.id, name: 'Dry Clean', price: Number(formData.get('price_dc')) || 200, unit: 'PC', category: 'ADDON' }
+  ]
+
+  const { error: serviceError } = await supabase
+    .from('shop_services') // <--- FIXED TABLE NAME
+    .insert(services)
+
+  if (serviceError) console.error("Service Error:", serviceError)
+
+  return { success: true, branchId: branch.id }
 }
