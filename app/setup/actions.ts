@@ -36,9 +36,10 @@ export async function createShopAction(formData: FormData) {
     return { success: false, error: branchError.message }
   }
 
-  // 3. Create Settings (TARGETING NEW TABLE: shop_settings)
+  // 3. Create Settings
+  // NOTE: This will now succeed because of the RLS fix in Step 1
   const { error: settingsError } = await supabase
-    .from('shop_settings') // <--- FIXED TABLE NAME
+    .from('shop_settings') 
     .insert({
       branch_id: branch.id,
       billing_mode: formData.get('billingMode') || 'MANUAL',
@@ -50,18 +51,9 @@ export async function createShopAction(formData: FormData) {
      return { success: false, error: "Failed to save settings" }
   }
 
-  // 4. Create Services (TARGETING NEW TABLE: shop_services)
-  const services = [
-    { branch_id: branch.id, name: 'Wash & Fold', price: Number(formData.get('price_wf')) || 50, unit: 'KG', category: 'BULK' },
-    { branch_id: branch.id, name: 'Iron Only', price: Number(formData.get('price_iron')) || 10, unit: 'PC', category: 'ADDON' },
-    { branch_id: branch.id, name: 'Dry Clean', price: Number(formData.get('price_dc')) || 200, unit: 'PC', category: 'ADDON' }
-  ]
-
-  const { error: serviceError } = await supabase
-    .from('shop_services') // <--- FIXED TABLE NAME
-    .insert(services)
-
-  if (serviceError) console.error("Service Error:", serviceError)
+  // 4. Create Services -> DELETED!
+  // We no longer insert default services. The 'get_branch_services' RPC 
+  // will automatically serve the Master Catalog defaults.
 
   return { success: true, branchId: branch.id }
 }
