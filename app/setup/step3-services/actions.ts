@@ -84,5 +84,5 @@ export async function finishSetupAction(formData: FormData) {
   }
 
   // Success!
-  redirect(`/dashboard?branchId=${branchId}`)
+  redirect(`/setup/step4-special-rates?branchId=${branchId}`)
 }

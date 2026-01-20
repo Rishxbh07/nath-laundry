@@ -11,22 +11,28 @@ export default async function Step4Page({ searchParams }: { searchParams: Promis
     { cookies: { getAll: () => cookieStore.getAll(), setAll: (c) => c.forEach(v => cookieStore.set(v)) } }
   )
 
-  // 1. Fetch items that typically need special rates (Saree, Blanket, etc.)
-  const { data: specialItems } = await supabase
+  // 1. Fetch ALL items from item_catalog - removed all category filters
+  const { data: items, error: itemError } = await supabase
     .from('item_catalog')
     .select('*')
-    .eq('is_special_suggestion', true)
-
-  // 2. Fetch available services (Master + any custom ones the user just created)
-  const { data: services } = await supabase
-    .from('master_services')
-    .select('*')
     .eq('is_active', true)
+    .order('name')
+
+  if (itemError) console.error("FETCH ERROR [Items]:", itemError)
+
+  // 2. Fetch YOUR branch services configured in Step 3
+  const { data: services, error: serviceError } = await supabase
+    .from('shop_services')
+    .select('*')
+    .eq('branch_id', branchId)
+    .eq('is_active', true)
+
+  if (serviceError) console.error("FETCH ERROR [Services]:", serviceError)
 
   return (
     <SpecialRatesForm 
       branchId={branchId} 
-      items={specialItems || []} 
+      items={items || []} 
       services={services || []} 
     />
   )
