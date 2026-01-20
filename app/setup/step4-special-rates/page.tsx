@@ -1,3 +1,4 @@
+// app/setup/step4-special-rates/page.tsx
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import SpecialRatesForm from './SpecialRatesForm'
@@ -11,29 +12,28 @@ export default async function Step4Page({ searchParams }: { searchParams: Promis
     { cookies: { getAll: () => cookieStore.getAll(), setAll: (c) => c.forEach(v => cookieStore.set(v)) } }
   )
 
-  // 1. Fetch ALL items from item_catalog - removed all category filters
-  const { data: items, error: itemError } = await supabase
+  // 1. Fetch only the relevant "Special" categories to reduce clutter
+  const { data: items } = await supabase
     .from('item_catalog')
     .select('*')
+    .in('category', ['ETHNIC', 'HOME_LINEN', 'other'])
     .eq('is_active', true)
-    .order('name')
+    .order('category', { ascending: true })
 
-  if (itemError) console.error("FETCH ERROR [Items]:", itemError)
-
-  // 2. Fetch YOUR branch services configured in Step 3
-  const { data: services, error: serviceError } = await supabase
+  // 2. Fetch configured branch services
+  const { data: services } = await supabase
     .from('shop_services')
     .select('*')
     .eq('branch_id', branchId)
     .eq('is_active', true)
 
-  if (serviceError) console.error("FETCH ERROR [Services]:", serviceError)
-
   return (
-    <SpecialRatesForm 
-      branchId={branchId} 
-      items={items || []} 
-      services={services || []} 
-    />
+    <div className="max-w-5xl mx-auto px-4 py-8"> 
+      <SpecialRatesForm 
+        branchId={branchId} 
+        items={items || []} 
+        services={services || []} 
+      />
+    </div>
   )
 }
