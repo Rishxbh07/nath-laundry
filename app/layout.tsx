@@ -30,15 +30,29 @@ export default async function RootLayout({
   let hasShop = false;
 
   if (user) {
-    // 2. Check if they have a branch connected
+    // 2. Check if they have a branch connected via profiles
     const { data: profile } = await supabase
       .from('profiles')
       .select('branch_id')
       .eq('user_id', user.id)
       .single();
     
-    // If branch_id exists, they have a shop!
+    // If branch_id exists in profiles, they have a shop!
     hasShop = !!profile?.branch_id;
+
+    // RECOGNITION RECOVERY: If profile link is missing, check the branch_staff table
+    if (!hasShop) {
+      const { data: staffRecord } = await supabase
+        .from('branch_staff')
+        .select('branch_id')
+        .eq('user_id', user.id)
+        .limit(1)
+        .single();
+
+      if (staffRecord) {
+        hasShop = true;
+      }
+    }
   }
 
   return (
@@ -47,7 +61,7 @@ export default async function RootLayout({
         {children}
         <Toaster position="top-center" />
         
-        {/* 3. Pass the flag to BottomNav */}
+        {/* 3. Pass the flag to BottomNav. Only show if user is logged in. */}
         {user && <BottomNav hasShop={hasShop} />}
       </body>
     </html>

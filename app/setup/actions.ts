@@ -8,7 +8,12 @@ export async function createShopAction(formData: FormData) {
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    { cookies: { getAll: () => cookieStore.getAll(), setAll: (c) => c.forEach(v => cookieStore.set(v)) } }
+    { 
+      cookies: { 
+        getAll: () => cookieStore.getAll(), 
+        setAll: (c) => c.forEach(v => cookieStore.set(v)) 
+      } 
+    }
   )
 
   // 1. Auth Check
@@ -26,7 +31,8 @@ export async function createShopAction(formData: FormData) {
       name: shopName,
       address: formData.get('address'),
       phone: formData.get('phone1'),
-      code: shopCode
+      code: shopCode,
+      status: 'ACTIVE' // Explicitly set status
     })
     .select('id')
     .single()
@@ -36,8 +42,22 @@ export async function createShopAction(formData: FormData) {
     return { success: false, error: branchError.message }
   }
 
-  // 3. Create Settings
-  // NOTE: This will now succeed because of the RLS fix in Step 1
+  // 3. Link Creator as OWNER in branch_staff
+  const { error: staffError } = await supabase
+    .from('branch_staff')
+    .insert({
+      branch_id: branch.id,
+      user_id: user.id,
+      role: 'OWNER'
+    })
+
+  if (staffError) {
+     console.error("Staff Creation Error:", staffError)
+     // Not returning fail here because branch is already created, 
+     // but in a production app you might want to handle this rollback.
+  }
+
+  // 4. Create Settings
   const { error: settingsError } = await supabase
     .from('shop_settings') 
     .insert({
@@ -51,9 +71,11 @@ export async function createShopAction(formData: FormData) {
      return { success: false, error: "Failed to save settings" }
   }
 
-  // 4. Create Services -> DELETED!
-  // We no longer insert default services. The 'get_branch_services' RPC 
-  // will automatically serve the Master Catalog defaults.
+  // 5. Update Profile with active branch_id for recognition
+  await supabase
+    .from('profiles')
+    .update({ branch_id: branch.id })
+    .eq('user_id', user.id)
 
   return { success: true, branchId: branch.id }
 }
