@@ -1,6 +1,7 @@
+// File: app/(pages)/page.tsx
 import React from 'react';
 import Link from 'next/link'; 
-import { Search, ChevronRight, Building2, ArrowRight } from 'lucide-react'; // Added icons
+import { Search, ChevronRight, Building2, ArrowRight } from 'lucide-react'; 
 import Header from '../components/Header';
 import StatsGrid from '../components/StatsGrid';
 import HistorySheet from '../components/HistorySheet'; 
@@ -9,6 +10,10 @@ import { createClient } from '@/app/utils/supabase/server';
 import { redirect } from 'next/navigation';
 import { fetchDailyStats } from '@/app/actions/stats';
 import { fetchActionableOrders } from '@/app/actions/home';
+
+// Force dynamic rendering to ensure fresh data is always fetched from the DB
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 export default async function Home() {
   const supabase = await createClient();
@@ -19,17 +24,30 @@ export default async function Home() {
     redirect('/login');
   }
 
-  // 2. Fetch Profile & Branch Info
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('branch_id, full_name') // Added full_name for the greeting
-    .eq('user_id', user.id)
-    .single();
+  // 2. V2 DATA RECOGNITION:
+  // Query branch details where the user is the 'owner_id' as per the new schema
+  const [profileResponse, branchResponse] = await Promise.all([
+    supabase
+      .from('profiles')
+      .select('full_name')
+      .eq('user_id', user.id)
+      .maybeSingle(),
+    supabase
+      .from('branches')
+      .select('id, name')
+      .eq('owner_id', user.id)
+      .eq('is_active', true)
+      .limit(1)
+      .maybeSingle()
+  ]);
 
-  // 3. EMPTY STATE: No Shop -> Show Setup UI (Transplanted from Dashboard)
-  if (!profile?.branch_id) {
+  const profile = profileResponse.data;
+  const activeBranchId = branchResponse.data?.id;
+
+  // 3. EMPTY STATE: Show Setup UI if no branch ownership is found
+  if (!activeBranchId) {
     return (
-      <main className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+      <main className="min-h-screen bg-slate-50 flex items-center justify-center p-6 font-comfortaa">
         <div className="max-w-xl w-full bg-white rounded-3xl shadow-xl border border-slate-100 p-10 text-center animate-in fade-in zoom-in duration-500">
             <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-6 text-blue-600">
                 <Building2 size={40} />
@@ -50,10 +68,10 @@ export default async function Home() {
     );
   }
 
-  // 4. NORMAL STATE: Fetch Stats for existing shop
+  // 4. NORMAL STATE: Fetch Stats & Orders using the detected branch ID
   const [stats, rawActionableData] = await Promise.all([
-    fetchDailyStats(profile.branch_id),
-    fetchActionableOrders(profile.branch_id)
+    fetchDailyStats(activeBranchId),
+    fetchActionableOrders(activeBranchId)
   ]);
 
   const formatOrder = (order: any) => {
@@ -73,12 +91,15 @@ export default async function Home() {
     duePickup: rawActionableData.duePickup.map(formatOrder)
   };
 
+  // 5. RENDER CLEAN OG HOMEPAGE
   return (
-    <main className="min-h-screen flex flex-col pt-24 pb-32 px-6 bg-slate-50">
+    <main className="min-h-screen flex flex-col pt-24 pb-32 px-6 bg-slate-50 font-comfortaa">
       <Header />
 
       <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
         
+        {/* Profile Card (HeroSection) removed from here as it is now separated */}
+
         {/* Stats Section */}
         <div>
           <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 ml-1">
@@ -101,7 +122,7 @@ export default async function Home() {
             Quick Actions
           </h3>
           
-          <HistorySheet branchId={profile.branch_id} />
+          <HistorySheet branchId={activeBranchId} />
 
           <div className="h-3" />
 
@@ -125,7 +146,7 @@ export default async function Home() {
 
         <div className="flex flex-col items-center justify-center mt-4 text-center space-y-2 opacity-40">
           <p className="text-slate-400 text-[10px] font-medium uppercase tracking-widest">
-            App version-v1.02 updated on 12/16/25 @5:30 AM 
+            App version-v2.0-saas updated on {new Date().toLocaleDateString()}
           </p>
         </div>
 

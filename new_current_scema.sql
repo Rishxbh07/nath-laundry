@@ -1,6 +1,16 @@
 -- WARNING: This schema is for context only and is not meant to be run.
 -- Table order and constraints may not be valid for execution.
 
+CREATE TABLE public.branch_staff (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  branch_id uuid,
+  user_id uuid,
+  role text DEFAULT 'STAFF'::text,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT branch_staff_pkey PRIMARY KEY (id),
+  CONSTRAINT branch_staff_branch_id_fkey FOREIGN KEY (branch_id) REFERENCES public.branches(id),
+  CONSTRAINT branch_staff_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);
 CREATE TABLE public.branches (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   owner_id uuid NOT NULL,
@@ -10,8 +20,21 @@ CREATE TABLE public.branches (
   phone text,
   is_active boolean DEFAULT true,
   created_at timestamp with time zone DEFAULT now(),
+  status text DEFAULT 'ACTIVE'::text CHECK (status = ANY (ARRAY['ACTIVE'::text, 'INACTIVE'::text, 'BANNED'::text, 'ARCHIVED'::text])),
   CONSTRAINT branches_pkey PRIMARY KEY (id),
   CONSTRAINT branches_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES auth.users(id)
+);
+CREATE TABLE public.customers (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  branch_id uuid NOT NULL,
+  phone text NOT NULL,
+  name text NOT NULL,
+  address text,
+  notes text,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT customers_pkey PRIMARY KEY (id),
+  CONSTRAINT customers_branch_id_fkey FOREIGN KEY (branch_id) REFERENCES public.branches(id)
 );
 CREATE TABLE public.item_catalog (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -29,6 +52,48 @@ CREATE TABLE public.master_services (
   category text NOT NULL,
   is_active boolean DEFAULT true,
   CONSTRAINT master_services_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.order_items (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  order_id uuid NOT NULL,
+  item_id uuid,
+  item_name_snapshot text NOT NULL,
+  service_type text NOT NULL,
+  quantity integer NOT NULL DEFAULT 1,
+  weight_kg numeric,
+  unit_price numeric NOT NULL DEFAULT 0,
+  total_price numeric NOT NULL DEFAULT 0,
+  is_chargeable boolean DEFAULT true,
+  CONSTRAINT order_items_pkey PRIMARY KEY (id),
+  CONSTRAINT order_items_order_id_fkey FOREIGN KEY (order_id) REFERENCES public.orders(id)
+);
+CREATE TABLE public.orders (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  branch_id uuid NOT NULL,
+  customer_id uuid NOT NULL,
+  readable_bill_id text UNIQUE,
+  total_amount numeric NOT NULL DEFAULT 0,
+  discount_amount numeric NOT NULL DEFAULT 0,
+  final_amount numeric NOT NULL DEFAULT 0,
+  amount_paid numeric NOT NULL DEFAULT 0,
+  payment_status text NOT NULL DEFAULT 'UNPAID'::text CHECK (payment_status = ANY (ARRAY['UNPAID'::text, 'PARTIAL'::text, 'PAID'::text])),
+  payment_method text,
+  status text NOT NULL DEFAULT 'RECEIVED'::text CHECK (status = ANY (ARRAY['RECEIVED'::text, 'IN_PROCESS'::text, 'READY'::text, 'DELIVERED'::text, 'CANCELLED'::text])),
+  bill_status USER-DEFINED NOT NULL DEFAULT 'OPEN'::bill_status_type,
+  is_open boolean NOT NULL DEFAULT true,
+  delivery_mode text NOT NULL DEFAULT 'PICKUP'::text,
+  total_piece_count integer DEFAULT 0,
+  total_weight numeric DEFAULT 0,
+  due_date timestamp with time zone,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  completed_at timestamp with time zone,
+  created_by uuid,
+  closed_by uuid,
+  notes text DEFAULT ''::text,
+  CONSTRAINT orders_pkey PRIMARY KEY (id),
+  CONSTRAINT orders_branch_id_fkey FOREIGN KEY (branch_id) REFERENCES public.branches(id),
+  CONSTRAINT orders_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.customers(id)
 );
 CREATE TABLE public.profiles (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
