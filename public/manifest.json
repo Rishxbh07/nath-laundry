@@ -1,7 +1,7 @@
 {
-  "name": "Nath Drycleaners",
-  "short_name": "Nath Laundry",
-  "description": "Staff Management & Billing System",
+  "name": "Laundry-Man.",
+  "short_name": "Laundry-Man.",
+  "description": "Laundry Management System",
   "id": "/",
   "start_url": "/",
   "display": "standalone",

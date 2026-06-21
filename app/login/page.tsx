@@ -28,7 +28,7 @@ export default function LoginPage() {
       <div className="mb-8 text-center">
         <h1 className="text-3xl md:text-4xl font-bold tracking-tight font-(family-name:--font-comfortaa) mb-2">
           <span className="bg-linear-to-r from-blue-700 via-blue-500 to-sky-400 bg-clip-text text-transparent">
-            Nath Drycleaners
+            Laundry man.
           </span>
         </h1>
         <p className="text-slate-400 text-sm font-medium uppercase tracking-widest">

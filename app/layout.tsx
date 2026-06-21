@@ -37,12 +37,12 @@ export async function generateMetadata(): Promise<Metadata> {
   const { data: { user } } = await supabase.auth.getUser();
 
   const baseMetadata: Metadata = {
-    title: "Nath Drycleaners",
-    description: "Laundry and Dry Cleaning Services",
+    title: "Laundry-Man.",
+    description: "Laundry Management System",
     appleWebApp: {
       capable: true,
       statusBarStyle: "default",
-      title: "Nath Laundry",
+      title: "Laundry-Man.",
     },
     formatDetection: {
       telephone: false,

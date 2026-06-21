@@ -193,7 +193,7 @@ export const InvoiceA4 = forwardRef<HTMLDivElement, InvoiceProps>(({ order, bran
            
            <div className="text-right text-xs text-slate-400">
               <p className="mb-1">Thank you for your business!</p>
-              <p>Terms & Conditions: nath-laundry.vercel.app/terms</p>
+              <p>Terms & Conditions: Laundry-man.vercel.app/terms</p>
            </div>
         </div>
       </div>
