@@ -6,14 +6,14 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { createOrderSchema, CreateOrderInput } from '@/app/lib/schemas/order';
 import { submitOrder, fetchOrderDetails, updateOrder } from '@/app/actions/order'; 
 import { 
-  ChevronRight, ChevronLeft, Check, X, User, Shirt, Truck, 
+  ChevronRight, ChevronLeft, Check, User, Shirt, Truck, 
   IndianRupee, Printer, Home, Send, Loader2, Link2 
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useReactToPrint } from 'react-to-print';
-// REMOVED: import { toBlob } from 'html-to-image'; <-- Optimization: Moved to dynamic import
 import Receipt from '@/app/components/Receipt';
 import dynamic from 'next/dynamic';
+import CloseButton from '@/app/components/CloseButton'; // Import your reusable component
 
 import CustomerStep from './steps/CustomerStep';
 import ItemsStep from './steps/ItemStep';
@@ -29,7 +29,6 @@ const ReviewStep = dynamic(() => import('./steps/ReviewStep'), {
   ssr: false 
 });
 
-// IMPORTANT: Updated Interface
 interface OrderWizardProps {
   branchId: string;
   items: any[];
@@ -62,7 +61,7 @@ export default function OrderWizard({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderSuccess, setOrderSuccess] = useState<any>(null);
   const [isCopying, setIsCopying] = useState(false); 
-  const [isExiting, setIsExiting] = useState(false); // <--- ADDED STATE
+  const [isExiting, setIsExiting] = useState(false); 
   const router = useRouter();
 
   const receiptRef = useRef<HTMLDivElement>(null); 
@@ -72,7 +71,6 @@ export default function OrderWizard({
     contentRef: receiptRef,
   });
 
-  // --- HELPER: Count Rows for Smart Switch ---
   const calculateBillRows = (order: any) => {
     if (!order) return 0;
     
@@ -101,7 +99,6 @@ export default function OrderWizard({
     setIsCopying(true);
 
     try {
-      // 1. DYNAMIC IMPORT (Huge Performance Win for initial load)
       const { toBlob } = await import('html-to-image');
 
       let rawPhone = orderSuccess.customer_phone;
@@ -194,12 +191,6 @@ export default function OrderWizard({
 
   const prevStep = () => setCurrentStep((prev) => Math.max(prev - 1, 0));
 
-  const handleCancel = () => {
-    if (confirm("Discard changes?")) {
-      router.push('/');
-    }
-  };
-
   const onSubmit: SubmitHandler<CreateOrderInput> = async (data) => {
     const action = isEditing ? "Update Order" : "Create Order";
     if(!confirm(`Confirm ${action}?`)) return;
@@ -282,7 +273,6 @@ export default function OrderWizard({
                 <Printer size={18} /> Print
              </button>
              
-             {/* UPDATED DONE BUTTON FOR PERFORMANCE */}
              <button 
                 onClick={() => {
                   setIsExiting(true);
@@ -310,12 +300,9 @@ export default function OrderWizard({
               {new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}
             </p>
           </div>
-          <button 
-            onClick={handleCancel}
-            className="h-10 w-10 rounded-full bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-400 hover:bg-red-50 hover:text-red-500 hover:border-red-100 active:scale-95 transition-all"
-          >
-            <X size={20} />
-          </button>
+          
+          {/* REPLACED WITH CENTRALIZED REUSABLE COMPONENT */}
+          <CloseButton href="/" confirmMessage="Discard changes?" />
         </div>
 
         <div className="pb-4 pt-1">

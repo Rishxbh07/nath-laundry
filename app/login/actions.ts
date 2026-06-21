@@ -21,30 +21,33 @@ export async function login(formData: FormData) {
     return { error: error.message }
   }
 
-  // Fetch branch profile information, then fetch the human-readable branch name from the branches table
+  // Fetch branch profile information using correct schema alignments
   if (authData?.user) {
-    // A. Get the user's branch code from their profile
+    // A. Match on user_id, select branch_id from the profiles table
     const { data: profile } = await supabase
       .from('profiles')
-      .select('branch_code')
-      .eq('id', authData.user.id)
+      .select('branch_id')
+      .eq('user_id', authData.user.id)
       .single()
 
-    if (profile?.branch_code) {
-      // B. Look up the actual branch name from the branches table using the code
+    if (profile?.branch_id) {
+      // B. Match on id to retrieve the branch name and code from the branches table
       const { data: branch } = await supabase
         .from('branches')
-        .select('name')
-        .eq('branch_code', profile.branch_code)
+        .select('name, code')
+        .eq('id', profile.branch_id)
         .single()
 
-      // C. Cache both secure code and display name into the session token metadata
-      await supabase.auth.updateUser({
-        data: {
-          branch_code: profile.branch_code,
-          branch_name: branch?.name || `Branch ${profile.branch_code}`, 
-        },
-      })
+      if (branch) {
+        // C. Cache accurate values inside the user session token metadata metadata container
+        await supabase.auth.updateUser({
+          data: {
+            branch_id: profile.branch_id,
+            branch_code: branch.code,
+            branch_name: branch.name, 
+          },
+        })
+      }
     }
   }
 

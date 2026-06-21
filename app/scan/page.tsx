@@ -2,12 +2,12 @@
 
 import React, { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { X, CheckCircle2, AlertCircle, Banknote, Truck, Loader2, Shirt, UserCheck, Calendar } from 'lucide-react';
+import { CheckCircle2, AlertCircle, Banknote, Truck, Loader2, Shirt, UserCheck, Calendar } from 'lucide-react';
 import { fetchOrderDetails } from '@/app/actions/order';
 import { deliverBill } from '../utils/billActions';
 import dynamic from 'next/dynamic';
+import CloseButton from '@/app/components/CloseButton'; // Import your reusable component
 
-// Dynamic import for Scanner
 const Scanner = dynamic(
   () => import('@yudiel/react-qr-scanner').then((mod) => mod.Scanner),
   { 
@@ -21,7 +21,6 @@ const Scanner = dynamic(
   }
 );
 
-// --- 1. Main Logic Component (Renamed) ---
 function ScanContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -33,7 +32,6 @@ function ScanContent() {
   const [successMsg, setSuccessMsg] = useState('');
   const [mounted, setMounted] = useState(false);
   
-  // Controls if camera is active. Defaults to FALSE if ID is present.
   const [isCameraActive, setIsCameraActive] = useState(!queryId);
 
   useEffect(() => {
@@ -118,9 +116,8 @@ function ScanContent() {
         <h1 className="text-lg font-bold">
           {scannedData ? 'Manage Order' : 'Scan Bill QR'}
         </h1>
-        <button onClick={() => router.back()} className="p-2 bg-white/10 rounded-full hover:bg-white/20 active:scale-95 transition-all">
-          <X size={24} />
-        </button>
+        {/* REPLACED WITH INTEGRATED REUSABLE LOADER CLOSE BUTTON */}
+        <CloseButton href="/" className="bg-white/10 border-transparent text-white hover:bg-white/20 hover:text-white" />
       </div>
 
       <div className="flex-1 flex flex-col items-center justify-center relative bg-gray-900">
@@ -135,7 +132,6 @@ function ScanContent() {
           </div>
         ) : scannedData ? (
           
-          /* Order Details Card */
           <div className="w-full h-full bg-slate-100 text-slate-800 flex flex-col animate-in slide-in-from-bottom duration-300 pt-16 rounded-t-3xl overflow-hidden shadow-2xl">
             
             <div className="bg-white p-6 rounded-b-3xl shadow-sm z-10 shrink-0 border-b border-slate-100">
@@ -256,7 +252,6 @@ function ScanContent() {
           </div>
 
         ) : (
-          /* Scanner View */
           <div className="w-full h-full absolute inset-0 bg-black">
             {isCameraActive ? (
               <>
@@ -290,7 +285,6 @@ function ScanContent() {
   );
 }
 
-// --- 2. Default Export with Suspense Boundary ---
 export default function ScanPage() {
   return (
     <Suspense fallback={

@@ -4,13 +4,12 @@ import { Trash2, Check, IndianRupee, Minus, Plus } from 'lucide-react';
 interface ItemConfigProps {
   item: any;
   bulkService: string;
-  specialRates: any[]; // <--- New Prop
+  specialRates: any[]; 
   onClose: () => void;
   onConfirm: (data: { qty: number; weight: number; service: string, overridePrice?: number }) => void;
 }
 
 export default function ItemConfigSheet({ item, bulkService, specialRates, onClose, onConfirm }: ItemConfigProps) {
-  // Category Checks
   const cat = item.category?.toLowerCase() || '';
   const isTargetCategory = cat === 'home linen' || cat === 'ethnic' || cat === 'other';
   const isEthnic = cat === 'ethnic';
@@ -19,10 +18,8 @@ export default function ItemConfigSheet({ item, bulkService, specialRates, onClo
   const [weight, setWeight] = useState(0);
   const [service, setService] = useState(isEthnic ? 'Dry Clean' : 'Standard');
   
-  // Override State
   const [overridePrice, setOverridePrice] = useState<number | ''>('');
 
-  // Auto-fill default price for target categories to make editing easier
   useEffect(() => {
     if (isTargetCategory) {
       const defaultRate = specialRates.find(
@@ -54,20 +51,18 @@ export default function ItemConfigSheet({ item, bulkService, specialRates, onClo
     <div className="fixed inset-0 bg-black/20 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4 animate-in fade-in duration-200">
       <div className="bg-white w-full max-w-sm rounded-3xl p-5 shadow-2xl space-y-5 animate-in slide-in-from-bottom-10 duration-300">
         
-        {/* Header */}
         <div className="flex justify-between items-start">
           <div>
             <h4 className="text-lg font-bold text-slate-800">{item.name}</h4>
             <p className="text-xs text-slate-400 font-medium uppercase tracking-wide">{item.category}</p>
           </div>
-          <button onClick={onClose} className="p-2 bg-slate-100 rounded-full text-slate-500">
+          <button onClick={onClose} className="p-2 bg-slate-100 rounded-full text-slate-500 active:scale-95 transition-transform">
             <Trash2 size={16} />
           </button>
         </div>
 
         <div className="space-y-4">
           
-          {/* A. Weight / Quantity */}
           {item.default_unit === 'KG' ? (
              <div>
                <label className="text-xs font-bold text-slate-400 uppercase">Item Weight</label>
@@ -93,7 +88,6 @@ export default function ItemConfigSheet({ item, bulkService, specialRates, onClo
              </div>
           )}
 
-          {/* B. Service Selector */}
           <div>
             <label className="text-xs font-bold text-slate-400 uppercase">Service Type</label>
             <div className="grid grid-cols-2 gap-2 mt-2">
@@ -130,7 +124,6 @@ export default function ItemConfigSheet({ item, bulkService, specialRates, onClo
             </div>
           </div>
 
-          {/* C. Price Override Box (Only for Target Categories) */}
           {isTargetCategory && (
             <div className="bg-yellow-50 p-3 rounded-2xl border border-yellow-100 animate-in fade-in">
                <label className="text-[10px] font-bold text-yellow-700 uppercase tracking-wider flex items-center gap-1 mb-2">

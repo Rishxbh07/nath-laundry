@@ -10,30 +10,29 @@ export default function CustomItemSheet({ onClose, onConfirm }: CustomItemSheetP
   const [name, setName] = useState('');
   const [category, setCategory] = useState('Household');
   const [unit, setUnit] = useState<'PIECE' | 'KG'>('PIECE');
-  const [rate, setRate] = useState<string>(''); // Kept as string for input handling
+  const [rate, setRate] = useState<string>(''); 
   const [qty, setQty] = useState<number>(1);
   const [weight, setWeight] = useState<string>('');
 
   const handleConfirm = () => {
-    if (!name || !rate) return; // Basic validation
+    if (!name || !rate) return; 
 
     const numRate = parseFloat(rate);
     const numWeight = unit === 'KG' ? parseFloat(weight) || 0 : 0;
     const numQty = unit === 'PIECE' ? qty : 1;
 
-    // Construct a pseudo-item that mimics the DB structure but with a 'MANUAL' flag
     const customEntry = {
       item: {
-        id: 'custom-item', // Placeholder, will be converted to null in calculator
+        id: 'custom-item', 
         name: name,
         category: category,
         default_unit: unit,
-        kind: 'MANUAL', // Critical Flag for Calculator
+        kind: 'MANUAL', 
       },
       quantity: numQty,
       weight: numWeight,
       service_type: 'Custom',
-      manual_rate: numRate // Payload for the calculator
+      manual_rate: numRate 
     };
 
     onConfirm(customEntry);
@@ -49,13 +48,12 @@ export default function CustomItemSheet({ onClose, onConfirm }: CustomItemSheetP
             <h4 className="text-lg font-bold text-slate-800">Add Custom Item</h4>
             <p className="text-xs text-slate-400 font-medium">For items not in inventory</p>
           </div>
-          <button onClick={onClose} className="p-2 bg-slate-100 rounded-full text-slate-500">
+          <button onClick={onClose} className="p-2 bg-slate-100 rounded-full text-slate-500 active:scale-95 transition-transform">
             <Trash2 size={16} />
           </button>
         </div>
 
         <div className="space-y-4">
-          {/* 1. Item Details */}
           <div className="space-y-2">
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Item Name</label>
             <input 
@@ -69,7 +67,6 @@ export default function CustomItemSheet({ onClose, onConfirm }: CustomItemSheetP
           </div>
 
           <div className="flex gap-4">
-             {/* 2. Category */}
              <div className="flex-1 space-y-2">
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Category</label>
                 <select 
@@ -84,7 +81,6 @@ export default function CustomItemSheet({ onClose, onConfirm }: CustomItemSheetP
                 </select>
              </div>
 
-             {/* 3. Unit Toggle */}
              <div className="flex-1 space-y-2">
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Pricing Unit</label>
                 <div className="flex bg-slate-100 p-1 rounded-xl">
@@ -105,7 +101,6 @@ export default function CustomItemSheet({ onClose, onConfirm }: CustomItemSheetP
           </div>
 
           <div className="flex gap-4">
-            {/* 4. Rate Input */}
             <div className="flex-1 space-y-2">
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
                 <IndianRupee size={10} /> Rate / Unit
@@ -119,7 +114,6 @@ export default function CustomItemSheet({ onClose, onConfirm }: CustomItemSheetP
               />
             </div>
 
-            {/* 5. Qty/Weight Input */}
             <div className="flex-1 space-y-2">
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
                 {unit === 'PIECE' ? <Hash size={10} /> : <Scale size={10} />} 
