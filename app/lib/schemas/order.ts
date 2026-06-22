@@ -30,7 +30,7 @@ export const createOrderSchema = z.object({
   due_time: z.string().min(1, "Time is required"),
   
   discount_amount: z.number().default(0),
-  payment_status: z.enum(['UNPAID', 'PAID', 'PARTIAL']).optional(),
+  payment_status: z.enum(['UNPAID', 'PAID', 'PARTIAL', 'PRE-PAID']).optional(), // <--- ADDED 'PRE-PAID' HERE
   payment_method: z.enum(['CASH', 'UPI', 'OTHER']).optional().nullable(),
 });
 

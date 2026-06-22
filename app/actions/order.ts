@@ -6,17 +6,10 @@ import { revalidatePath } from 'next/cache'
 
 // --- Helper: Convert IST Date+Time Inputs to UTC ISO String ---
 function toISOFromIST(dateStr: string, timeStr: string) {
-  // 1. Parse inputs (YYYY-MM-DD and HH:mm)
   const [year, month, day] = dateStr.split('-').map(Number);
   const [hour, minute] = timeStr.split(':').map(Number);
 
-  // 2. Create a base Date object (Treating these numbers as if they were UTC first)
-  // Month is 0-indexed in JS Date
   const utcBase = new Date(Date.UTC(year, month - 1, day, hour, minute, 0));
-
-  // 3. Subtract 5.5 Hours (IST Offset) to get the actual UTC timestamp
-  // Example: User wants 14:00 IST. 
-  // 14:00 - 5.5h = 08:30 UTC.
   const istOffset = 5.5 * 60 * 60 * 1000;
   const trueUTC = new Date(utcBase.getTime() - istOffset);
 
@@ -25,7 +18,6 @@ function toISOFromIST(dateStr: string, timeStr: string) {
 
 // --- Helper: Calculate Total Weight ---
 function calculateTotalWeight(items: any[]): number {
-  // Sums up weight of all items (Bulk Pile weight + individual special item weights)
   return items.reduce((sum, item) => sum + (Number(item.weight) || 0), 0);
 }
 
@@ -63,7 +55,6 @@ export async function fetchLaundryMeta() {
 export async function fetchCustomerHistory(phone: string) {
   const supabase = await createClient();
   
-  // 1. Get Customer ID
   const { data: customer } = await supabase
     .from('customers')
     .select('id')
@@ -72,7 +63,6 @@ export async function fetchCustomerHistory(phone: string) {
 
   if (!customer) return [];
 
-  // 2. Fetch Last 3 Orders (Now using order.total_weight instead of joining items)
   const { data: orders } = await supabase
     .from('orders')
     .select(`
@@ -120,14 +110,10 @@ export async function submitOrder(data: CreateOrderInput, branchId: string) {
 
   const totalAmount = data.items.reduce((sum, item) => sum + item.total_price, 0);
   const finalAmount = totalAmount - (data.discount_amount || 0);
-
-  // IST FIX: Use helper to calculate Due Date
   const finalDueDate = toISOFromIST(data.due_date, data.due_time);
-  
-  const isPaidOnCreation = data.payment_status === 'PAID';
-  
-  // Calculate Total Weight for the Order Table
   const totalWeight = calculateTotalWeight(data.items);
+
+  const isPaidOnCreation = data.payment_status === 'PAID' || data.payment_status === 'PRE-PAID';
 
   const orderPayload = {
     delivery_mode: data.delivery_mode,
@@ -135,15 +121,17 @@ export async function submitOrder(data: CreateOrderInput, branchId: string) {
     discount_amount: data.discount_amount,
     total_amount: totalAmount,
     final_amount: finalAmount < 0 ? 0 : finalAmount,
-    payment_status: data.payment_status,
-    payment_method: isPaidOnCreation ? data.payment_method : null,
+    amount_paid: isPaidOnCreation ? (finalAmount < 0 ? 0 : finalAmount) : 0,
+    payment_status: isPaidOnCreation ? 'PRE-PAID' : 'UNPAID', 
+    payment_method: isPaidOnCreation ? (data.payment_method || 'UPI') : null, 
     total_piece_count: data.total_item_count,
     total_weight: totalWeight,
     created_by: user.id,
-    closed_by: isPaidOnCreation ? user.id : null,
-    completed_at: isPaidOnCreation ? new Date().toISOString() : null,
-    bill_status: isPaidOnCreation ? 'CLOSED' : 'OPEN',
-    status: isPaidOnCreation ? 'DELIVERED' : 'RECEIVED'
+    closed_by: null,           
+    completed_at: null,        
+    bill_status: 'OPEN',       
+    status: 'RECEIVED',        
+    is_open: true              
   };
 
   const formattedItems = data.items.map(item => ({
@@ -179,13 +167,11 @@ export async function updateOrder(orderId: string, data: CreateOrderInput) {
 
   const totalAmount = data.items.reduce((sum, item) => sum + item.total_price, 0);
   const finalAmount = Math.max(0, totalAmount - (data.discount_amount || 0));
-  
-  // IST FIX: Use helper to calculate Due Date
   const finalDueDate = toISOFromIST(data.due_date, data.due_time);
-  
   const totalWeight = calculateTotalWeight(data.items);
 
-  // A. Handle Customer Update First
+  const isPaidOnCreation = data.payment_status === 'PAID' || data.payment_status === 'PRE-PAID';
+
   const { data: customerData, error: customerError } = await supabase
     .from('customers')
     .upsert({ 
@@ -201,29 +187,29 @@ export async function updateOrder(orderId: string, data: CreateOrderInput) {
     return { error: "Failed to update customer details" };
   }
 
-  // B. Update Order Details
   const { error: orderError } = await supabase
     .from('orders')
     .update({
       customer_id: customerData.id,
       delivery_mode: data.delivery_mode,
-      due_date: finalDueDate, // Updated
+      due_date: finalDueDate, 
       discount_amount: data.discount_amount,
       total_amount: totalAmount,
       final_amount: finalAmount,
-      payment_status: data.payment_status,
-      payment_method: data.payment_method || null,
+      amount_paid: isPaidOnCreation ? finalAmount : 0,
+      payment_status: isPaidOnCreation ? 'PRE-PAID' : 'UNPAID',
+      payment_method: isPaidOnCreation ? (data.payment_method || 'UPI') : null,
       total_piece_count: data.total_item_count,
       total_weight: totalWeight,
-      completed_at: data.payment_status === 'PAID' ? new Date().toISOString() : null,
-      status: data.payment_status === 'PAID' ? 'DELIVERED' : 'RECEIVED', 
-      bill_status: data.payment_status === 'PAID' ? 'CLOSED' : 'OPEN'
+      completed_at: null,       
+      status: 'RECEIVED',       
+      bill_status: 'OPEN',
+      is_open: true
     })
     .eq('id', orderId);
 
   if (orderError) return { error: orderError.message };
 
-  // C. Replace Items
   const { error: deleteError } = await supabase
     .from('order_items')
     .delete()
@@ -315,7 +301,7 @@ export async function markOrderAsPacked(orderId: string) {
   
   const { error } = await supabase
     .from('orders')
-    .update({ status: 'READY' }) // Updates status from RECEIVED to READY
+    .update({ status: 'READY' }) 
     .eq('id', orderId);
 
   if (error) {

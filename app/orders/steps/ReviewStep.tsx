@@ -67,7 +67,7 @@ export default function ReviewStep({ form, branchData, staffName }: ReviewStepPr
         <div>
           <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-2">Payment Status</label>
           <div className="flex bg-slate-100 p-1 rounded-xl">
-            {['UNPAID', 'PAID', 'PARTIAL'].map((status) => (
+            {['UNPAID', 'PRE-PAID', 'PARTIAL'].map((status) => (
               <button
                 key={status}
                 type="button"
